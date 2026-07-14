@@ -6,8 +6,10 @@ const { Pool } = require('pg');
 
 const ROOT = __dirname;
 const POSTGRES_ENABLED = Boolean(process.env.DATABASE_URL || process.env.PGHOST);
-const CLOUD_MODE = process.env.CLOUD_MODE === 'true';
-const SQLITE_BACKUP_ENABLED = process.env.SQLITE_BACKUP_ENABLED !== 'false';
+const CLOUD_MODE = process.env.CLOUD_MODE === 'true' || process.env.RENDER === 'true';
+const SQLITE_BACKUP_ENABLED = process.env.SQLITE_BACKUP_ENABLED
+  ? process.env.SQLITE_BACKUP_ENABLED !== 'false'
+  : !CLOUD_MODE;
 const SQLITE_SYNC_DELAY_MS = Math.max(250, Number(process.env.SQLITE_SYNC_DELAY_MS || 1500));
 
 let pool = null;
@@ -26,9 +28,12 @@ const status = {
 
 function postgresConfig() {
   if (process.env.DATABASE_URL) {
+    const pgSsl = process.env.PGSSL
+      ? process.env.PGSSL === 'true'
+      : CLOUD_MODE || /(?:^|\.)supabase\.(?:com|co)(?::\d+)?(?:\/|$)/i.test(process.env.DATABASE_URL);
     return {
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined,
+      ssl: pgSsl ? { rejectUnauthorized: false } : undefined,
       connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS || 3000)
     };
   }

@@ -35,7 +35,7 @@ const AUTH_ATTEMPTS_PER_15_MINUTES = Math.max(3, Number(process.env.AUTH_ATTEMPT
 const SESSION_TTL_MS = Math.max(15 * 60 * 1000, Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60 * 1000);
 const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 const ENABLE_TEST_ENDPOINTS = process.env.ENABLE_TEST_ENDPOINTS === 'true';
-const CLOUD_MODE = process.env.CLOUD_MODE === 'true';
+const CLOUD_MODE = process.env.CLOUD_MODE === 'true' || process.env.RENDER === 'true';
 const EMERGENCY_ATTENDANCE_PASSWORD = String(process.env.EMERGENCY_ATTENDANCE_PASSWORD || '').trim();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const ROLE_CREDENTIALS = [
