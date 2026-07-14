@@ -1,0 +1,2483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GMS Attendance Server - Enrollment</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --background: #f6f8fc;
+      --surface: #ffffff;
+      --surface-soft: #fbfcfe;
+
+      --navy: #10213e;
+      --text: #35435f;
+      --muted: #74819a;
+
+      --border: #dce4ef;
+      --border-soft: #e8edf4;
+
+      --green: #07856f;
+      --green-dark: #056b5a;
+      --green-soft: #e7f8f3;
+
+      --red: #e9303d;
+      --red-soft: #fff0f1;
+
+      --orange: #ef8200;
+      --orange-soft: #fff3e4;
+
+      --blue: #1476d4;
+      --blue-soft: #edf5ff;
+
+      --shadow:
+        0 1px 2px rgba(15, 23, 42, 0.03),
+        0 5px 18px rgba(15, 23, 42, 0.045);
+
+      --radius: 9px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: "Inter", sans-serif;
+      color: var(--text);
+      background: var(--background);
+      overflow-x: hidden;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 198px minmax(0, 1fr);
+    }
+
+    /* =========================================================
+       SIDEBAR
+    ========================================================= */
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 198px;
+      padding: 14px 11px;
+      background: #ffffff;
+      border-right: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .brand {
+      min-height: 60px;
+      padding: 0 4px 13px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .brand-logo {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      border-radius: 8px;
+      background: linear-gradient(145deg, #172949, #09182f);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      box-shadow: 0 7px 16px rgba(16, 33, 62, 0.2);
+    }
+
+    .brand-info h1 {
+      color: var(--navy);
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .brand-info p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 500;
+    }
+
+    .navigation {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-item {
+      width: 100%;
+      min-height: 39px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: #33415e;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      font-size: 10px;
+      font-weight: 650;
+      transition:
+        background 0.18s ease,
+        color 0.18s ease,
+        border-color 0.18s ease;
+    }
+
+    .nav-item svg {
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
+    }
+
+    .nav-item:hover {
+      color: var(--green-dark);
+      background: #f2faf7;
+    }
+
+    .nav-item.active {
+      color: #075f51;
+      background: linear-gradient(90deg, #e7f8f2, #eefaf7);
+      border-color: #bce7db;
+    }
+
+    .server-status {
+      margin-top: auto;
+      min-height: 44px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fbfcfe;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 8px;
+      border-radius: 50%;
+      background: #15985c;
+      box-shadow: 0 0 0 3px rgba(21, 152, 92, 0.08);
+    }
+
+    .server-status svg {
+      width: 13px;
+      height: 13px;
+      margin-left: auto;
+      color: var(--muted);
+    }
+
+    /* =========================================================
+       MAIN
+    ========================================================= */
+
+    .main {
+      grid-column: 2;
+      min-width: 0;
+      padding: 15px 18px 16px;
+    }
+
+    .page-header {
+      min-height: 50px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .page-heading h2 {
+      color: var(--navy);
+      font-size: 22px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .page-heading p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-weight: 700;
+      transition:
+        transform 0.18s ease,
+        background 0.18s ease,
+        box-shadow 0.18s ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button-outline {
+      min-height: 35px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 9px;
+      box-shadow: var(--shadow);
+    }
+
+    .button-outline:hover {
+      background: #f9fbfd;
+    }
+
+    .button-outline svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .button-primary {
+      min-height: 35px;
+      padding: 0 15px;
+      background: linear-gradient(180deg, #0a8973, #066d5c);
+      color: #ffffff;
+      font-size: 9px;
+      box-shadow: 0 6px 15px rgba(6, 109, 92, 0.18);
+    }
+
+    .button-primary svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .button-danger {
+      min-height: 35px;
+      padding: 0 15px;
+      background: linear-gradient(180deg, #ef4451, #d92d39);
+      color: #ffffff;
+      font-size: 9px;
+    }
+
+    /* =========================================================
+       PAGE TABS
+    ========================================================= */
+
+    .page-tabs {
+      min-height: 48px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .page-tab {
+      position: relative;
+      min-height: 42px;
+      padding: 0 13px;
+      border: 0;
+      background: transparent;
+      color: #4f5c74;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .page-tab::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      background: transparent;
+    }
+
+    .page-tab.active {
+      color: var(--green-dark);
+      background: linear-gradient(180deg, #f7fdfa, #ffffff);
+    }
+
+    .page-tab.active::after {
+      background: var(--green);
+    }
+
+    /* =========================================================
+       PANELS
+    ========================================================= */
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    /* =========================================================
+       ENROLLMENT FORM
+    ========================================================= */
+
+    .registration-panel {
+      margin-bottom: 12px;
+      padding: 14px 14px 16px;
+    }
+
+    .registration-header {
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .registration-header h3 {
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .device-action {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .device-action label {
+      color: #607089;
+      font-size: 9px;
+      font-weight: 500;
+    }
+
+    .select-box {
+      position: relative;
+      min-width: 205px;
+      min-height: 35px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+    }
+
+    .select-box select {
+      width: 100%;
+      min-height: 33px;
+      padding: 0 31px 0 11px;
+      border: 0;
+      outline: 0;
+      appearance: none;
+      background: transparent;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .select-box svg {
+      position: absolute;
+      right: 9px;
+      width: 12px;
+      height: 12px;
+      color: var(--navy);
+      pointer-events: none;
+    }
+
+    .registration-form {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 14px 16px;
+    }
+
+    .form-group {
+      min-width: 0;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      color: #4d5a72;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .required {
+      color: var(--red);
+    }
+
+    .form-control {
+      position: relative;
+    }
+
+    .form-control input,
+    .form-control select,
+    .form-control textarea {
+      width: 100%;
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: 0;
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 500;
+      transition:
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+    }
+
+    .form-control textarea {
+      min-height: 34px;
+      height: 34px;
+      padding-top: 9px;
+      resize: vertical;
+    }
+
+    .form-control input::placeholder,
+    .form-control textarea::placeholder {
+      color: #9aa5b7;
+    }
+
+    .form-control input:focus,
+    .form-control select:focus,
+    .form-control textarea:focus {
+      border-color: #61b7a6;
+      box-shadow: 0 0 0 3px rgba(7, 133, 111, 0.08);
+    }
+
+    .form-control select {
+      padding-right: 30px;
+      appearance: none;
+      cursor: pointer;
+    }
+
+    .form-control > svg {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      width: 13px;
+      height: 13px;
+      color: var(--navy);
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .date-control input {
+      padding-right: 31px;
+    }
+
+    .form-message {
+      grid-column: 1 / -1;
+      min-height: 39px;
+      padding: 0 12px;
+      border: 1px solid #cce2f8;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #eef7ff, #f5faff);
+      color: #145da1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 9px;
+      font-weight: 500;
+    }
+
+    .form-message svg {
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
+      fill: currentColor;
+    }
+
+    /* =========================================================
+       TABLE HEADER
+    ========================================================= */
+
+    .table-panel {
+      margin-bottom: 12px;
+    }
+
+    .table-toolbar {
+      min-height: 61px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .table-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .table-title h3 {
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .count-badge {
+      min-width: 23px;
+      min-height: 20px;
+      padding: 0 6px;
+      border: 1px solid #bce8db;
+      border-radius: 5px;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .table-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .search-box {
+      position: relative;
+      width: 245px;
+      min-height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+    }
+
+    .search-box input {
+      width: 100%;
+      min-height: 32px;
+      padding: 0 34px 0 11px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--navy);
+      font-size: 9px;
+    }
+
+    .search-box input::placeholder {
+      color: #98a3b5;
+    }
+
+    .search-box svg {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      width: 13px;
+      height: 13px;
+      color: #53647f;
+      transform: translateY(-50%);
+    }
+
+    .toolbar-button {
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--navy);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .toolbar-button:hover {
+      color: var(--green-dark);
+      background: var(--green-soft);
+    }
+
+    .toolbar-button svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .toolbar-button .chevron {
+      width: 11px;
+      height: 11px;
+    }
+
+    /* =========================================================
+       TABLE
+    ========================================================= */
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    thead {
+      background: #fbfcfe;
+    }
+
+    th {
+      height: 32px;
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #66728a;
+      text-align: left;
+      font-size: 7px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    td {
+      height: 45px;
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #35425c;
+      font-size: 8px;
+      font-weight: 500;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      transition: background 0.15s ease;
+    }
+
+    tbody tr:hover {
+      background: #fafdfc;
+    }
+
+    .employee-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .employee-avatar {
+      width: 29px;
+      height: 29px;
+      flex: 0 0 29px;
+      border: 2px solid #eef2f6;
+      border-radius: 50%;
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 7px;
+      font-weight: 800;
+    }
+
+    .avatar-one {
+      background: linear-gradient(145deg, #a34d31, #db8d70);
+    }
+
+    .avatar-two {
+      background: linear-gradient(145deg, #194b79, #4a8ccb);
+    }
+
+    .avatar-three {
+      background: linear-gradient(145deg, #8f3d35, #d8897e);
+    }
+
+    .avatar-four {
+      background: linear-gradient(145deg, #2c465a, #668196);
+    }
+
+    .avatar-five {
+      background: linear-gradient(145deg, #4c362f, #987766);
+    }
+
+    .avatar-six {
+      background: linear-gradient(145deg, #1f4e74, #5b8eaf);
+    }
+
+    .avatar-seven {
+      background: linear-gradient(145deg, #aa5b30, #dda066);
+    }
+
+    .employee-name {
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 650;
+    }
+
+    .employee-name.bold {
+      font-weight: 800;
+    }
+
+    .finger-count {
+      color: var(--green-dark);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .finger-count svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .status-badge {
+      min-height: 20px;
+      padding: 0 7px;
+      border: 1px solid #bde7db;
+      border-radius: 5px;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .status-badge.inactive {
+      color: #69758b;
+      background: #f1f4f8;
+      border-color: #dbe2eb;
+    }
+
+    .action-button {
+      width: 27px;
+      height: 27px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .action-button:hover {
+      color: var(--green-dark);
+      background: var(--green-soft);
+    }
+
+    .action-button svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    /* =========================================================
+       PAGINATION
+    ========================================================= */
+
+    .table-footer {
+      min-height: 57px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 15px;
+    }
+
+    .entries-text {
+      color: #65728a;
+      font-size: 8px;
+      font-weight: 500;
+    }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .page-button {
+      min-width: 29px;
+      height: 29px;
+      padding: 0 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .page-button:hover {
+      color: var(--green-dark);
+      background: var(--green-soft);
+    }
+
+    .page-button.active {
+      color: #ffffff;
+      background: linear-gradient(180deg, #0a8973, #066d5c);
+      border-color: var(--green-dark);
+      box-shadow: 0 4px 10px rgba(6, 109, 92, 0.18);
+    }
+
+    .page-button svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    /* =========================================================
+       BULK ENROLLMENT
+    ========================================================= */
+
+    .bulk-panel {
+      display: none;
+      padding: 18px;
+    }
+
+    .bulk-panel.active {
+      display: block;
+    }
+
+    .bulk-content {
+      min-height: 340px;
+      border: 2px dashed #cfdae7;
+      border-radius: 10px;
+      background: #fbfcfe;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 30px;
+    }
+
+    .bulk-icon {
+      width: 58px;
+      height: 58px;
+      margin-bottom: 14px;
+      border-radius: 50%;
+      background: var(--green-soft);
+      color: var(--green);
+      display: grid;
+      place-items: center;
+    }
+
+    .bulk-icon svg {
+      width: 27px;
+      height: 27px;
+    }
+
+    .bulk-content h3 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .bulk-content p {
+      max-width: 500px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.7;
+    }
+
+    .bulk-actions {
+      margin-top: 18px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    /* =========================================================
+       MODAL
+    ========================================================= */
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal {
+      width: min(490px, 100%);
+      border-radius: 12px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 25px 70px rgba(15, 23, 42, 0.28);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-header {
+      min-height: 55px;
+      padding: 0 17px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h3 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .modal-close {
+      width: 31px;
+      height: 31px;
+      border: 0;
+      border-radius: 7px;
+      background: #f1f5f9;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .modal-close svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .modal-body {
+      padding: 18px;
+    }
+
+    .enrollment-status {
+      text-align: center;
+    }
+
+    .scanner-animation {
+      position: relative;
+      width: 105px;
+      height: 105px;
+      margin: 0 auto 15px;
+      border: 2px solid #a9dfd2;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #edfaf6, #ffffff);
+      color: var(--green);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .scanner-animation svg {
+      width: 57px;
+      height: 57px;
+    }
+
+    .scanner-line {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      height: 2px;
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(7, 133, 111, 0.55);
+      animation: scanner 1.6s infinite ease-in-out;
+    }
+
+    @keyframes scanner {
+      0% {
+        top: 14px;
+      }
+
+      50% {
+        top: 87px;
+      }
+
+      100% {
+        top: 14px;
+      }
+    }
+
+    .enrollment-status h4 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .enrollment-status p {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.6;
+    }
+
+    .progress-bar {
+      height: 8px;
+      margin-top: 18px;
+      border-radius: 999px;
+      background: #edf1f5;
+      overflow: hidden;
+    }
+
+    .progress-value {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0a9279, #0eb18f);
+      transition: width 0.4s ease;
+    }
+
+    .progress-text {
+      margin-top: 8px;
+      color: var(--green-dark);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .modal-footer {
+      padding: 13px 17px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* =========================================================
+       ACTION MENU
+    ========================================================= */
+
+    .action-menu-popup {
+      position: fixed;
+      z-index: 400;
+      width: 155px;
+      padding: 5px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 14px 35px rgba(15, 23, 42, 0.16);
+      display: none;
+    }
+
+    .action-menu-popup.show {
+      display: block;
+    }
+
+    .menu-action {
+      width: 100%;
+      min-height: 32px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-align: left;
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .menu-action:hover {
+      color: var(--green-dark);
+      background: var(--green-soft);
+    }
+
+    .menu-action.danger {
+      color: var(--red);
+    }
+
+    .menu-action.danger:hover {
+      background: var(--red-soft);
+    }
+
+    .menu-action svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    /* =========================================================
+       TOAST
+    ========================================================= */
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 1000;
+      min-width: 245px;
+      min-height: 46px;
+      padding: 0 14px;
+      border-radius: 8px;
+      background: #10203b;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 10px;
+      font-weight: 700;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.27);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(20px);
+      transition:
+        opacity 0.25s ease,
+        transform 0.25s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast svg {
+      width: 17px;
+      height: 17px;
+      color: #4ade80;
+    }
+
+    /* =========================================================
+       RESPONSIVE
+    ========================================================= */
+
+    @media (max-width: 1250px) {
+      .registration-form {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }
+
+      .table-toolbar {
+        align-items: flex-start;
+        padding-block: 12px;
+      }
+
+      .table-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+    }
+
+    @media (max-width: 920px) {
+      .app {
+        grid-template-columns: 74px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        width: 74px;
+        align-items: center;
+      }
+
+      .brand {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .brand-info,
+      .nav-item span,
+      .server-status span,
+      .server-status svg {
+        display: none;
+      }
+
+      .navigation {
+        width: 100%;
+      }
+
+      .nav-item {
+        width: 46px;
+        margin: 0 auto;
+        padding: 0;
+        justify-content: center;
+      }
+
+      .server-status {
+        width: 46px;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .main {
+        grid-column: 2;
+      }
+
+      .registration-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .device-action {
+        width: 100%;
+      }
+
+      .device-action .select-box {
+        flex: 1;
+      }
+
+      .table-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .table-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 650px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        padding: 10px;
+      }
+
+      .brand {
+        justify-content: flex-start;
+        border-bottom: 0;
+      }
+
+      .brand-info {
+        display: block;
+      }
+
+      .navigation {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .nav-item {
+        width: 100%;
+      }
+
+      .server-status {
+        display: none;
+      }
+
+      .main {
+        padding: 13px 10px 16px;
+      }
+
+      .registration-form {
+        grid-template-columns: 1fr;
+      }
+
+      .device-action {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .device-action .select-box {
+        width: 100%;
+      }
+
+      .device-action .button-primary {
+        width: 100%;
+      }
+
+      .table-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .search-box {
+        width: 100%;
+        grid-column: 1 / -1;
+      }
+
+      .page-heading h2 {
+        font-size: 19px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/standalone-shared.css?v=20260714-88" />
+</head>
+
+<body class="live-page-entering">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">GMS</div>
+
+        <div class="brand-info">
+          <h1>Attendance Server</h1>
+          <p>Main Branch</p>
+        </div>
+      </div>
+
+      <nav class="navigation">
+        <button class="nav-item" data-page="Dashboard">
+          <i data-lucide="house"></i>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-item" data-page="Time Card">
+          <i data-lucide="calendar-days"></i>
+          <span>Time Card</span>
+        </button>
+
+        <button class="nav-item active" data-page="Enrollment">
+          <i data-lucide="fingerprint"></i>
+          <span>Enrollment</span>
+        </button>
+
+        <button class="nav-item" data-page="Employees">
+          <i data-lucide="users"></i>
+          <span>Employees</span>
+        </button>
+
+        <button class="nav-item" data-page="Devices">
+          <i data-lucide="monitor-smartphone"></i>
+          <span>Devices</span>
+        </button>
+
+        <button class="nav-item" data-page="Settings">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </button>
+
+        <button class="nav-item" data-page="Logs">
+          <i data-lucide="file-text"></i>
+          <span>Logs</span>
+        </button>
+      </nav>
+
+      <div class="server-status">
+        <span class="status-dot"></span>
+        <span>Online • Asia/Manila</span>
+        <i data-lucide="chevron-right"></i>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div class="page-heading">
+          <h2>Enrollment</h2>
+          <p>
+            Register new employee fingerprints or manage existing registrations
+          </p>
+        </div>
+
+        <button class="button button-outline" id="refreshButton">
+          <i data-lucide="refresh-cw"></i>
+          Refresh
+        </button>
+      </header>
+
+      <div class="page-tabs">
+        <button class="page-tab active" data-tab="register">
+          Register Employee
+        </button>
+
+        <button class="page-tab" data-tab="bulk">
+          Bulk Enrollment
+        </button>
+      </div>
+
+      <div id="registerContent">
+        <section class="panel registration-panel">
+          <div class="registration-header">
+            <h3>Register Employee Fingerprint</h3>
+
+            <div class="device-action">
+              <label for="deviceSelect">Device</label>
+
+              <div class="select-box">
+                <select id="deviceSelect">
+                  <option value="">Waiting for live devices...</option>
+                </select>
+
+                <i data-lucide="chevron-down"></i>
+              </div>
+
+              <button
+                type="button"
+                class="button button-primary"
+                id="startEnrollmentButton"
+                disabled
+                title="Connect an ESP32-S3 first"
+              >
+                <i data-lucide="fingerprint"></i>
+                Start Enrollment
+              </button>
+            </div>
+          </div>
+
+          <form class="registration-form" id="registrationForm" hidden style="display:none">
+            <div class="form-group">
+              <label for="firstName">
+                First Name <span class="required">*</span>
+              </label>
+
+              <div class="form-control">
+                <input
+                  id="firstName"
+                  name="firstName"
+                  type="text"
+                  placeholder="Enter first name"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="middleName">Middle Name</label>
+
+              <div class="form-control">
+                <input
+                  id="middleName"
+                  name="middleName"
+                  type="text"
+                  placeholder="Enter middle name"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="lastName">
+                Last Name <span class="required">*</span>
+              </label>
+
+              <div class="form-control">
+                <input
+                  id="lastName"
+                  name="lastName"
+                  type="text"
+                  placeholder="Enter last name"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="employeeId">
+                Employee ID <span class="required">*</span>
+              </label>
+
+              <div class="form-control">
+                <input
+                  id="employeeId"
+                  name="employeeId"
+                  type="text"
+                  placeholder="Enter employee ID"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="department">Department</label>
+
+              <div class="form-control">
+                <select id="department" name="department">
+                  <option value="">Select department</option>
+                  <option>Accounting</option>
+                  <option>Admin</option>
+                  <option>Finance</option>
+                  <option>HR Department</option>
+                  <option>IT Department</option>
+                  <option>Logistics</option>
+                  <option>Operations</option>
+                  <option>Sales</option>
+                </select>
+
+                <i data-lucide="chevron-down"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="position">Position</label>
+
+              <div class="form-control">
+                <select id="position" name="position">
+                  <option value="">Select position</option>
+                  <option>Accountant</option>
+                  <option>Admin Staff</option>
+                  <option>Cashier</option>
+                  <option>HR Officer</option>
+                  <option>IT Support</option>
+                  <option>Manager</option>
+                  <option>Staff</option>
+                  <option>Supervisor</option>
+                </select>
+
+                <i data-lucide="chevron-down"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="schedule">Schedule</label>
+
+              <div class="form-control">
+                <select id="schedule" name="schedule">
+                  <option value="">Select schedule</option>
+                  <option>Mon - Fri (08:00 - 17:00)</option>
+                  <option>Mon - Fri (09:00 - 18:00)</option>
+                  <option>Mon - Fri (10:00 - 19:00)</option>
+                  <option>Mon - Sat (07:00 - 16:00)</option>
+                </select>
+
+                <i data-lucide="chevron-down"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="dateHired">Date Hired</label>
+
+              <div class="form-control date-control">
+                <input id="dateHired" name="dateHired" type="date" />
+                <i data-lucide="calendar-days"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="email">Email</label>
+
+              <div class="form-control">
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="Enter email address"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="phone">Phone</label>
+
+              <div class="form-control">
+                <input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  placeholder="Enter phone number"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="employeeStatus">Status</label>
+
+              <div class="form-control">
+                <select id="employeeStatus" name="employeeStatus">
+                  <option>Active</option>
+                  <option>Inactive</option>
+                  <option>Suspended</option>
+                </select>
+
+                <i data-lucide="chevron-down"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="notes">Notes</label>
+
+              <div class="form-control">
+                <textarea
+                  id="notes"
+                  name="notes"
+                  placeholder="Enter notes (optional)"
+                ></textarea>
+              </div>
+            </div>
+
+            <div class="form-message">
+              <i data-lucide="info"></i>
+
+              <span>
+                Make sure the selected device is online. Ask the employee to
+                place their finger on the scanner when ready.
+              </span>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="table-toolbar">
+            <div class="table-title">
+              <h3>Registered Employees</h3>
+              <span class="count-badge" id="employeeCount">12</span>
+            </div>
+
+            <div class="table-actions">
+              <div class="search-box">
+                <input
+                  id="employeeSearch"
+                  type="search"
+                  placeholder="Search by name or ID..."
+                />
+
+                <i data-lucide="search"></i>
+              </div>
+
+              <button class="toolbar-button" id="filterButton">
+                <i data-lucide="list-filter"></i>
+                Filter
+                <i class="chevron" data-lucide="chevron-down"></i>
+              </button>
+
+              <button class="toolbar-button" id="exportButton">
+                <i data-lucide="download"></i>
+                Export
+                <i class="chevron" data-lucide="chevron-down"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table id="employeesTable">
+              <thead><tr><th>#</th><th>Employee</th><th>Employee ID</th><th>Department</th><th>Position</th><th>Schedule</th><th>Registered On</th><th>Device</th><th>Fingers</th><th>Status</th><th>Action</th></tr></thead><tbody id="employeeTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="table-footer">
+            <span class="entries-text" id="entriesText">
+              Showing 1 to 7 of 10 entries
+            </span>
+
+            <div class="pagination">
+              <button class="page-button" id="previousPage">
+                <i data-lucide="chevron-left"></i>
+              </button>
+
+              <button class="page-button active" data-page="1">1</button>
+              <button class="page-button" data-page="2">2</button>
+
+              <button class="page-button" id="nextPage">
+                <i data-lucide="chevron-right"></i>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel bulk-panel" id="bulkContent">
+        <div class="bulk-content">
+          <div class="bulk-icon">
+            <i data-lucide="users-round"></i>
+          </div>
+
+          <h3>Bulk Employee Enrollment</h3>
+
+          <p>
+            Upload a CSV file containing employee details, then enroll each
+            fingerprint using the selected attendance device. Required columns:
+            first name, last name, employee ID, department, position and
+            schedule.
+          </p>
+
+          <div class="bulk-actions">
+            <button class="button button-outline" id="downloadTemplateButton">
+              <i data-lucide="file-down"></i>
+              Download Template
+            </button>
+
+            <button class="button button-primary" id="uploadCsvButton">
+              <i data-lucide="upload"></i>
+              Upload CSV File
+            </button>
+
+            <input
+              id="csvFileInput"
+              type="file"
+              accept=".csv"
+              hidden
+            />
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="enrollmentModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Fingerprint Enrollment</h3>
+
+        <button class="modal-close" id="closeEnrollmentModal">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="enrollment-status">
+          <div class="scanner-animation">
+            <i data-lucide="fingerprint"></i>
+            <span class="scanner-line"></span>
+          </div>
+
+          <h4 id="enrollmentTitle">Waiting for fingerprint</h4>
+
+          <p id="enrollmentMessage">
+            Ask the employee to place their finger firmly on the scanner.
+          </p>
+
+          <div class="progress-bar">
+            <div class="progress-value" id="progressValue"></div>
+          </div>
+
+          <div class="progress-text" id="progressText">
+            Enrollment ready
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="button button-outline" id="cancelEnrollment">
+          Cancel
+        </button>
+
+        <button class="button button-primary" id="simulateScanButton">
+          Simulate Scan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="generalModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="generalModalTitle">Employee Details</h3>
+
+        <button class="modal-close" id="closeGeneralModal">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" id="generalModalBody"></div>
+
+      <div class="modal-footer">
+        <button class="button button-outline" id="generalModalCancel">
+          Close
+        </button>
+
+        <button class="button button-primary" id="generalModalConfirm">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="action-menu-popup" id="actionMenuPopup">
+    <button class="menu-action" data-action="view">
+      <i data-lucide="eye"></i>
+      View Details
+    </button>
+
+    <button class="menu-action" data-action="edit">
+      <i data-lucide="square-pen"></i>
+      Edit Employee
+    </button>
+
+    <button class="menu-action" data-action="reenroll">
+      <i data-lucide="fingerprint"></i>
+      Re-enroll Finger
+    </button>
+
+    <button class="menu-action danger" data-action="delete">
+      <i data-lucide="trash-2"></i>
+      Remove Enrollment
+    </button>
+  </div>
+
+  <div class="toast" id="toast">
+    <i data-lucide="circle-check"></i>
+    <span id="toastMessage">Action completed.</span>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const registrationForm = document.getElementById("registrationForm");
+    const enrollmentModal = document.getElementById("enrollmentModal");
+    const generalModal = document.getElementById("generalModal");
+
+    const progressValue = document.getElementById("progressValue");
+    const progressText = document.getElementById("progressText");
+    const enrollmentTitle = document.getElementById("enrollmentTitle");
+    const enrollmentMessage = document.getElementById("enrollmentMessage");
+
+    const actionMenuPopup = document.getElementById("actionMenuPopup");
+
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toastMessage");
+
+    const employeeSearch = document.getElementById("employeeSearch");
+    const employeeRows = Array.from(
+      document.querySelectorAll("#employeeTableBody tr")
+    );
+
+    let selectedEmployee = null;
+    let selectedEmployeeId = null;
+    let currentPage = 1;
+    let enrollmentStep = 0;
+    let toastTimer;
+
+    function showToast(message) {
+      toastMessage.textContent = message;
+      toast.classList.add("show");
+
+      clearTimeout(toastTimer);
+
+      toastTimer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2200);
+    }
+
+    function openGeneralModal(title, body) {
+      document.getElementById("generalModalTitle").textContent = title;
+      document.getElementById("generalModalBody").innerHTML = body;
+      generalModal.classList.add("show");
+    }
+
+    function closeGeneralModal() {
+      generalModal.classList.remove("show");
+    }
+
+    function openEnrollmentModal() {
+      enrollmentStep = 0;
+      progressValue.style.width = "0%";
+      progressText.textContent = "Enrollment ready";
+      enrollmentTitle.textContent = "Waiting for fingerprint";
+      enrollmentMessage.textContent =
+        "Ask the employee to place their finger firmly on the scanner.";
+
+      enrollmentModal.classList.add("show");
+    }
+
+    function closeEnrollmentModal() {
+      enrollmentModal.classList.remove("show");
+    }
+
+    function validateEnrollmentForm() {
+      const requiredFields = [
+        document.getElementById("firstName"),
+        document.getElementById("lastName"),
+        document.getElementById("employeeId")
+      ];
+
+      let valid = true;
+
+      requiredFields.forEach((field) => {
+        if (!field.value.trim()) {
+          field.style.borderColor = "#e9303d";
+          valid = false;
+        } else {
+          field.style.borderColor = "";
+        }
+      });
+
+      if (!valid) {
+        showToast("Complete all required employee fields.");
+      }
+
+      return valid;
+    }
+
+    function renderPage(page) {
+      currentPage = page;
+
+      const searchValue = employeeSearch.value
+        .trim()
+        .toLowerCase();
+
+      employeeRows.forEach((row, index) => {
+        const matchesSearch =
+          row.dataset.name.toLowerCase().includes(searchValue) ||
+          row.dataset.id.toLowerCase().includes(searchValue);
+
+        if (searchValue) {
+          row.hidden = !matchesSearch;
+          return;
+        }
+
+        if (page === 1) {
+          row.hidden = index >= 7;
+        } else {
+          row.hidden = index < 7;
+        }
+      });
+
+      document
+        .querySelectorAll(".page-button[data-page]")
+        .forEach((button) => {
+          button.classList.toggle(
+            "active",
+            Number(button.dataset.page) === page
+          );
+        });
+
+      document.getElementById("entriesText").textContent =
+        page === 1
+          ? "Showing 1 to 7 of 10 entries"
+          : "Showing 8 to 10 of 10 entries";
+
+      lucide.createIcons();
+    }
+
+    function exportEmployees() {
+      const rows = [
+        [
+          "Employee",
+          "Employee ID",
+          "Department",
+          "Position",
+          "Schedule",
+          "Registered On",
+          "Device",
+          "Fingers",
+          "Status"
+        ]
+      ];
+
+      employeeRows.forEach((row) => {
+        const cells = Array.from(row.querySelectorAll("td"));
+
+        rows.push([
+          row.dataset.name,
+          cells[2].innerText.trim(),
+          cells[3].innerText.trim(),
+          cells[4].innerText.trim(),
+          cells[5].innerText.trim(),
+          cells[6].innerText.trim(),
+          cells[7].innerText.trim(),
+          cells[8].innerText.trim(),
+          cells[9].innerText.trim()
+        ]);
+      });
+
+      const csv = rows
+        .map((row) =>
+          row
+            .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+            .join(",")
+        )
+        .join("\n");
+
+      const blob = new Blob([csv], {
+        type: "text/csv;charset=utf-8;"
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = "registered-employees.csv";
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(url);
+
+      showToast("Registered employees exported.");
+    }
+
+    document
+      .querySelectorAll(".page-tab")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          document
+            .querySelectorAll(".page-tab")
+            .forEach((tab) => tab.classList.remove("active"));
+
+          button.classList.add("active");
+
+          const tab = button.dataset.tab;
+          const registerContent =
+            document.getElementById("registerContent");
+          const bulkContent =
+            document.getElementById("bulkContent");
+
+          if (tab === "register") {
+            registerContent.style.display = "block";
+            bulkContent.classList.remove("active");
+          } else {
+            registerContent.style.display = "none";
+            bulkContent.classList.add("active");
+          }
+        });
+      });
+
+    document
+      .querySelectorAll(".nav-item")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          document
+            .querySelectorAll(".nav-item")
+            .forEach((item) => item.classList.remove("active"));
+
+          button.classList.add("active");
+          showToast(`${button.dataset.page} selected.`);
+        });
+      });
+
+    document
+      .getElementById("refreshButton")
+      .addEventListener("click", () => {
+        const button = document.getElementById("refreshButton");
+        const icon = button.querySelector("svg");
+
+        button.disabled = true;
+        button.style.opacity = "0.65";
+
+        if (icon) {
+          icon.style.transition = "transform 0.65s ease";
+          icon.style.transform = "rotate(360deg)";
+        }
+
+        setTimeout(() => {
+          button.disabled = false;
+          button.style.opacity = "1";
+
+          if (icon) {
+            icon.style.transform = "rotate(0deg)";
+          }
+
+          showToast("Enrollment records refreshed.");
+        }, 650);
+      });
+
+    document
+      .getElementById("startEnrollmentButton")
+      .addEventListener("click", () => {
+        if (!validateEnrollmentForm()) {
+          return;
+        }
+
+        const selectedDevice =
+          document.getElementById("deviceSelect").value;
+
+        if (!selectedDevice) {
+          showToast("Select a fingerprint device first.");
+          return;
+        }
+
+        openEnrollmentModal();
+      });
+
+    document
+      .getElementById("simulateScanButton")
+      .addEventListener("click", () => {
+        enrollmentStep += 1;
+
+        if (enrollmentStep === 1) {
+          progressValue.style.width = "35%";
+          progressText.textContent = "First scan captured";
+          enrollmentTitle.textContent = "Remove finger";
+          enrollmentMessage.textContent =
+            "Remove the finger from the scanner, then place it again.";
+          return;
+        }
+
+        if (enrollmentStep === 2) {
+          progressValue.style.width = "70%";
+          progressText.textContent = "Second scan captured";
+          enrollmentTitle.textContent = "Place finger one more time";
+          enrollmentMessage.textContent =
+            "The scanner needs one final scan for verification.";
+          return;
+        }
+
+        progressValue.style.width = "100%";
+        progressText.textContent = "Fingerprint enrolled successfully";
+        enrollmentTitle.textContent = "Enrollment completed";
+        enrollmentMessage.textContent =
+          "The employee fingerprint has been saved to the device.";
+
+        document.getElementById("simulateScanButton").disabled = true;
+
+        setTimeout(() => {
+          document.getElementById("simulateScanButton").disabled = false;
+          closeEnrollmentModal();
+          registrationForm.reset();
+          showToast("Employee fingerprint registered successfully.");
+        }, 1300);
+      });
+
+    document
+      .getElementById("closeEnrollmentModal")
+      .addEventListener("click", closeEnrollmentModal);
+
+    document
+      .getElementById("cancelEnrollment")
+      .addEventListener("click", closeEnrollmentModal);
+
+    employeeSearch.addEventListener("input", () => {
+      const value = employeeSearch.value
+        .trim()
+        .toLowerCase();
+
+      if (!value) {
+        renderPage(currentPage);
+        return;
+      }
+
+      let visibleCount = 0;
+
+      employeeRows.forEach((row) => {
+        const matches =
+          row.dataset.name.toLowerCase().includes(value) ||
+          row.dataset.id.toLowerCase().includes(value);
+
+        row.hidden = !matches;
+
+        if (matches) {
+          visibleCount += 1;
+        }
+      });
+
+      document.getElementById("entriesText").textContent =
+        `Showing ${visibleCount} matching entries`;
+    });
+
+    document
+      .querySelectorAll(".page-button[data-page]")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          employeeSearch.value = "";
+          renderPage(Number(button.dataset.page));
+        });
+      });
+
+    document
+      .getElementById("previousPage")
+      .addEventListener("click", () => {
+        if (currentPage > 1) {
+          employeeSearch.value = "";
+          renderPage(currentPage - 1);
+        }
+      });
+
+    document
+      .getElementById("nextPage")
+      .addEventListener("click", () => {
+        if (currentPage < 2) {
+          employeeSearch.value = "";
+          renderPage(currentPage + 1);
+        }
+      });
+
+    document
+      .getElementById("filterButton")
+      .addEventListener("click", () => {
+        openGeneralModal(
+          "Employee Filters",
+          `
+            <div style="display:grid;gap:12px;">
+              <label style="font-size:10px;font-weight:700;color:#4d5a72;">
+                Registration Status
+              </label>
+
+              <select
+                id="modalStatusFilter"
+                style="
+                  min-height:36px;
+                  padding:0 10px;
+                  border:1px solid #dce4ef;
+                  border-radius:7px;
+                  color:#10213e;
+                  outline:none;
+                "
+              >
+                <option>All Employees</option>
+                <option>Active</option>
+                <option>Inactive</option>
+              </select>
+
+              <label style="font-size:10px;font-weight:700;color:#4d5a72;">
+                Device
+              </label>
+
+              <select
+                style="
+                  min-height:36px;
+                  padding:0 10px;
+                  border:1px solid #dce4ef;
+                  border-radius:7px;
+                  color:#10213e;
+                  outline:none;
+                "
+              >
+                <option>Waiting for live devices...</option>
+              </select>
+            </div>
+          `
+        );
+      });
+
+    document
+      .getElementById("exportButton")
+      .addEventListener("click", exportEmployees);
+
+    document
+      .querySelectorAll(".action-button")
+      .forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+
+          selectedEmployee = button.dataset.employee;
+          selectedEmployeeId = button.dataset.id;
+
+          const rect = button.getBoundingClientRect();
+
+          actionMenuPopup.style.top =
+            `${Math.min(rect.bottom + 5, window.innerHeight - 170)}px`;
+
+          actionMenuPopup.style.left =
+            `${Math.max(10, rect.right - 155)}px`;
+
+          actionMenuPopup.classList.add("show");
+        });
+      });
+
+    document
+      .querySelectorAll(".menu-action")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          const action = button.dataset.action;
+          actionMenuPopup.classList.remove("show");
+
+          if (action === "view") {
+            openGeneralModal(
+              `${selectedEmployee} - Employee Details`,
+              `
+                <div style="display:grid;gap:12px;font-size:10px;">
+                  <div style="display:flex;justify-content:space-between;">
+                    <span style="color:#74819a;">Employee</span>
+                    <strong style="color:#10213e;">${selectedEmployee}</strong>
+                  </div>
+
+                  <div style="display:flex;justify-content:space-between;">
+                    <span style="color:#74819a;">Employee ID</span>
+                    <strong style="color:#10213e;">${selectedEmployeeId}</strong>
+                  </div>
+
+                  <div style="display:flex;justify-content:space-between;">
+                    <span style="color:#74819a;">Fingerprints</span>
+                    <strong style="color:#07856f;">2 Registered</strong>
+                  </div>
+
+                  <div style="display:flex;justify-content:space-between;">
+                    <span style="color:#74819a;">Status</span>
+                    <strong style="color:#07856f;">Active</strong>
+                  </div>
+                </div>
+              `
+            );
+          }
+
+          if (action === "edit") {
+            openGeneralModal(
+              `Edit ${selectedEmployee}`,
+              `
+                <p style="font-size:10px;line-height:1.7;color:#64718a;">
+                  Update the employee information, department, position,
+                  schedule, status, and assigned fingerprint device.
+                </p>
+              `
+            );
+          }
+
+          if (action === "reenroll") {
+            openEnrollmentModal();
+          }
+
+          if (action === "delete") {
+            openGeneralModal(
+              "Remove Fingerprint Enrollment",
+              `
+                <p style="font-size:10px;line-height:1.7;color:#64718a;">
+                  Remove the saved fingerprint enrollment of
+                  <strong style="color:#10213e;">
+                    ${selectedEmployee}
+                  </strong>?
+                  The employee will not be able to use fingerprint attendance
+                  until enrolled again.
+                </p>
+              `
+            );
+          }
+        });
+      });
+
+    document.addEventListener("click", (event) => {
+      if (
+        !event.target.closest(".action-button") &&
+        !event.target.closest(".action-menu-popup")
+      ) {
+        actionMenuPopup.classList.remove("show");
+      }
+    });
+
+    document
+      .getElementById("closeGeneralModal")
+      .addEventListener("click", closeGeneralModal);
+
+    document
+      .getElementById("generalModalCancel")
+      .addEventListener("click", closeGeneralModal);
+
+    document
+      .getElementById("generalModalConfirm")
+      .addEventListener("click", () => {
+        closeGeneralModal();
+        showToast("Employee enrollment updated.");
+      });
+
+    enrollmentModal.addEventListener("click", (event) => {
+      if (event.target === enrollmentModal) {
+        closeEnrollmentModal();
+      }
+    });
+
+    generalModal.addEventListener("click", (event) => {
+      if (event.target === generalModal) {
+        closeGeneralModal();
+      }
+    });
+
+    document
+      .getElementById("downloadTemplateButton")
+      .addEventListener("click", () => {
+        const template = [
+          [
+            "First Name",
+            "Middle Name",
+            "Last Name",
+            "Employee ID",
+            "Department",
+            "Position",
+            "Schedule",
+            "Date Hired",
+            "Email",
+            "Phone",
+            "Status"
+          ]
+        ];
+
+        const csv = template
+          .map((row) =>
+            row
+              .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+              .join(",")
+          )
+          .join("\n");
+
+        const blob = new Blob([csv], {
+          type: "text/csv;charset=utf-8;"
+        });
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+
+        link.href = url;
+        link.download = "employee-enrollment-template.csv";
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        URL.revokeObjectURL(url);
+
+        showToast("Enrollment template downloaded.");
+      });
+
+    document
+      .getElementById("uploadCsvButton")
+      .addEventListener("click", () => {
+        document.getElementById("csvFileInput").click();
+      });
+
+    document
+      .getElementById("csvFileInput")
+      .addEventListener("change", (event) => {
+        const file = event.target.files[0];
+
+        if (!file) {
+          return;
+        }
+
+        showToast(`${file.name} selected for bulk enrollment.`);
+      });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeEnrollmentModal();
+        closeGeneralModal();
+        actionMenuPopup.classList.remove("show");
+      }
+    });
+
+    renderPage(1);
+  </script>
+  <script src="/functional-pages.js?v=20260714-88"></script>
+</body>
+</html>

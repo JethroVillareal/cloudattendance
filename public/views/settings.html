@@ -1,0 +1,2505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>GMS Attendance Server - Settings</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --page-bg: #f7f8fc;
+      --surface: #ffffff;
+      --surface-soft: #fafbfe;
+
+      --navy: #111b38;
+      --text: #35425f;
+      --muted: #71809b;
+
+      --border: #dde4ef;
+      --border-soft: #e9eef5;
+
+      --purple: #4e2de6;
+      --purple-dark: #3b20c5;
+      --purple-soft: #f0edff;
+
+      --green: #149663;
+      --green-dark: #087a4d;
+      --green-soft: #e8f8f0;
+
+      --red: #f23f4f;
+      --red-soft: #fff0f2;
+
+      --orange: #f29a16;
+      --orange-soft: #fff4e2;
+
+      --blue: #1478e2;
+      --blue-soft: #eaf4ff;
+
+      --gray-toggle: #bcc6d6;
+
+      --shadow:
+        0 1px 2px rgba(16, 24, 40, 0.03),
+        0 6px 20px rgba(16, 24, 40, 0.045);
+
+      --radius: 9px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: "Inter", sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+    }
+
+    /* =========================================================
+       SIDEBAR
+    ========================================================= */
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 220px;
+      background: #ffffff;
+      border-right: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .brand {
+      height: 68px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+    }
+
+    .brand-logo {
+      width: 60px;
+      height: 68px;
+      flex: 0 0 60px;
+      border-radius: 0 0 8px 0;
+      background: linear-gradient(145deg, #5d39f1, #4121cf);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+    }
+
+    .brand-logo svg {
+      width: 25px;
+      height: 25px;
+      stroke-width: 2;
+    }
+
+    .brand-info {
+      padding-left: 14px;
+    }
+
+    .brand-info h1 {
+      color: var(--purple);
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .brand-info p {
+      margin-top: 6px;
+      color: #4d5d78;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .navigation {
+      padding: 20px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-item {
+      width: 100%;
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: #344465;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+      transition:
+        background 0.18s ease,
+        color 0.18s ease,
+        border-color 0.18s ease;
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      color: var(--purple);
+      flex: 0 0 auto;
+    }
+
+    .nav-item:hover {
+      background: #f7f5ff;
+      color: var(--purple-dark);
+    }
+
+    .nav-item.active {
+      background: linear-gradient(90deg, #f0edff, #f5f3ff);
+      border-color: #ece8ff;
+      color: var(--purple);
+    }
+
+    .sidebar-status {
+      min-height: 52px;
+      margin: auto 11px 17px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: var(--shadow);
+    }
+
+    .online-dot {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 10px;
+      border-radius: 50%;
+      background: #18a365;
+      box-shadow: 0 0 0 3px rgba(24, 163, 101, 0.08);
+    }
+
+    .sidebar-status-text {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .sidebar-status-text strong {
+      display: block;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .sidebar-status-text span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 8px;
+    }
+
+    .sidebar-status svg {
+      width: 15px;
+      height: 15px;
+      color: #586783;
+    }
+
+    /* =========================================================
+       WORKSPACE / TOPBAR
+    ========================================================= */
+
+    .workspace {
+      grid-column: 2;
+      min-width: 0;
+    }
+
+    .topbar {
+      height: 68px;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--border-soft);
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 34px;
+    }
+
+    .top-icon {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      background: transparent;
+      color: #63718d;
+      display: grid;
+      place-items: center;
+    }
+
+    .top-icon.menu {
+      color: var(--purple);
+    }
+
+    .top-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .notification-count {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 17px;
+      height: 17px;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      background: #f65b75;
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .user-menu {
+      min-width: 181px;
+      padding-left: 15px;
+      border-left: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .admin-avatar {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      border: 2px solid #f0f2f7;
+      border-radius: 50%;
+      overflow: hidden;
+      background: #e8edf4;
+    }
+
+    .admin-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .admin-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .admin-info strong {
+      display: block;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .admin-info span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    .user-menu svg {
+      width: 14px;
+      height: 14px;
+      color: #687790;
+    }
+
+    /* =========================================================
+       MAIN
+    ========================================================= */
+
+    .main {
+      min-width: 0;
+      padding: 21px 24px 18px;
+    }
+
+    .page-header {
+      margin-bottom: 16px;
+      padding: 0 4px;
+    }
+
+    .page-heading h2 {
+      color: var(--navy);
+      font-size: 22px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .page-heading p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    /* =========================================================
+       SETTINGS TABS
+    ========================================================= */
+
+    .settings-tabs {
+      min-height: 47px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      overflow-x: auto;
+    }
+
+    .settings-tab {
+      position: relative;
+      min-height: 44px;
+      padding: 0 17px;
+      border: 0;
+      background: transparent;
+      color: #52617e;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      font-size: 9px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .settings-tab::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      background: transparent;
+      border-radius: 999px 999px 0 0;
+    }
+
+    .settings-tab svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .settings-tab:hover {
+      color: var(--purple);
+      background: #faf9ff;
+    }
+
+    .settings-tab.active {
+      color: var(--purple);
+    }
+
+    .settings-tab.active::after {
+      background: var(--purple);
+    }
+
+    /* =========================================================
+       PANELS
+    ========================================================= */
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      box-shadow: var(--shadow);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* =========================================================
+       GENERAL SETTINGS PANEL
+    ========================================================= */
+
+    .general-panel {
+      margin-top: 3px;
+      margin-bottom: 16px;
+      padding: 17px 19px 20px;
+    }
+
+    .panel-heading h3 {
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .panel-heading p {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 500;
+    }
+
+    .settings-form {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 14px 21px;
+    }
+
+    .form-group {
+      min-width: 0;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 7px;
+      color: #25334f;
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .form-control {
+      position: relative;
+    }
+
+    .form-control input,
+    .form-control select {
+      width: 100%;
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: 0;
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 500;
+      transition:
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+    }
+
+    .form-control input:focus,
+    .form-control select:focus {
+      border-color: #9684ef;
+      box-shadow: 0 0 0 3px rgba(78, 45, 230, 0.08);
+    }
+
+    .form-control select {
+      appearance: none;
+      padding-right: 31px;
+      cursor: pointer;
+    }
+
+    .form-control > svg {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      width: 13px;
+      height: 13px;
+      color: #4f5e7b;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .form-helper {
+      display: block;
+      margin-top: 5px;
+      color: #74809a;
+      font-size: 7px;
+      line-height: 1.35;
+    }
+
+    .save-row {
+      margin-top: 17px;
+    }
+
+    .primary-button {
+      min-height: 31px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 6px;
+      background: linear-gradient(180deg, #5937ed, #4222cf);
+      color: #ffffff;
+      font-size: 8px;
+      font-weight: 700;
+      box-shadow: 0 5px 12px rgba(78, 45, 230, 0.2);
+    }
+
+    .primary-button:hover {
+      filter: brightness(1.04);
+      transform: translateY(-1px);
+    }
+
+    /* =========================================================
+       LOWER PANELS
+    ========================================================= */
+
+    .lower-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
+      gap: 16px;
+    }
+
+    .options-panel,
+    .maintenance-panel {
+      min-height: 332px;
+      padding: 16px 19px 18px;
+    }
+
+    .options-panel h3,
+    .maintenance-panel h3 {
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    /* =========================================================
+       SYSTEM OPTIONS
+    ========================================================= */
+
+    .option-list {
+      margin-top: 11px;
+    }
+
+    .option-item {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+    }
+
+    .option-icon {
+      width: 37px;
+      height: 37px;
+      flex: 0 0 37px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+    }
+
+    .option-icon svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .option-icon.green {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .option-icon.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .option-icon.purple {
+      color: #9c45d9;
+      background: #f7ecff;
+    }
+
+    .option-icon.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+    }
+
+    .option-icon.red {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .option-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .option-info strong {
+      display: block;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .option-info span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 7px;
+      line-height: 1.4;
+    }
+
+    .switch {
+      position: relative;
+      width: 33px;
+      height: 19px;
+      flex: 0 0 33px;
+    }
+
+    .switch input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .switch-track {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: var(--gray-toggle);
+      transition: background 0.2s ease;
+      cursor: pointer;
+    }
+
+    .switch-track::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2);
+      transition: transform 0.2s ease;
+    }
+
+    .switch input:checked + .switch-track {
+      background: linear-gradient(180deg, #5937ed, #4021c9);
+    }
+
+    .switch input:checked + .switch-track::after {
+      transform: translateX(14px);
+    }
+
+    /* =========================================================
+       MAINTENANCE
+    ========================================================= */
+
+    .maintenance-list {
+      margin-top: 12px;
+    }
+
+    .maintenance-item {
+      min-height: 57px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+    }
+
+    .maintenance-icon {
+      width: 39px;
+      height: 39px;
+      flex: 0 0 39px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+    }
+
+    .maintenance-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .maintenance-icon.red {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .maintenance-icon.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+    }
+
+    .maintenance-icon.green {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .maintenance-icon.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .maintenance-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .maintenance-info strong {
+      display: block;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .maintenance-info span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 7px;
+      line-height: 1.4;
+    }
+
+    .outline-action {
+      min-width: 95px;
+      min-height: 33px;
+      padding: 0 12px;
+      border-radius: 6px;
+      background: #ffffff;
+      font-size: 8px;
+      font-weight: 650;
+    }
+
+    .outline-action.red {
+      border: 1px solid #ff6c78;
+      color: #ed2d3c;
+    }
+
+    .outline-action.orange {
+      border: 1px solid #f3a23c;
+      color: #d87900;
+    }
+
+    .outline-action.green {
+      border: 1px solid #48b98a;
+      color: #078152;
+    }
+
+    .outline-action.blue {
+      border: 1px solid #5b99f3;
+      color: #176fd2;
+    }
+
+    .outline-action:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(16, 24, 40, 0.06);
+    }
+
+    .warning-note {
+      min-height: 41px;
+      margin-top: 11px;
+      padding: 0 11px;
+      border: 1px solid #cfe2fb;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #eef6ff, #f4f9ff);
+      color: #1769c3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 7px;
+      line-height: 1.4;
+    }
+
+    .warning-note svg {
+      width: 17px;
+      height: 17px;
+      flex: 0 0 17px;
+      fill: currentColor;
+    }
+
+    /* =========================================================
+       OTHER TAB CONTENT
+    ========================================================= */
+
+    .placeholder-panel {
+      min-height: 550px;
+      margin-top: 3px;
+      padding: 22px;
+    }
+
+    .placeholder-panel h3 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .placeholder-panel > p {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    .placeholder-grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .placeholder-card {
+      padding: 16px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .placeholder-card h4 {
+      color: var(--navy);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .placeholder-card p {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 8px;
+      line-height: 1.6;
+    }
+
+    /* =========================================================
+       MODAL
+    ========================================================= */
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      padding: 20px;
+      background: rgba(14, 22, 44, 0.48);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal {
+      width: min(470px, 100%);
+      border-radius: 12px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 25px 75px rgba(15, 23, 42, 0.28);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-header {
+      min-height: 58px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h3 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 7px;
+      background: #f1f3f8;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .modal-close svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .modal-body {
+      padding: 18px;
+    }
+
+    .modal-message {
+      color: #5d6b84;
+      font-size: 10px;
+      line-height: 1.7;
+    }
+
+    .modal-warning {
+      margin-top: 14px;
+      padding: 11px;
+      border: 1px solid #ffd4d8;
+      border-radius: 7px;
+      background: var(--red-soft);
+      color: #d72c3a;
+      font-size: 9px;
+      line-height: 1.6;
+    }
+
+    .modal-footer {
+      padding: 13px 18px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .modal-button {
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 7px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .modal-button.cancel {
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--navy);
+    }
+
+    .modal-button.confirm {
+      border: 0;
+      background: linear-gradient(180deg, #5937ed, #4222cf);
+      color: #ffffff;
+    }
+
+    .modal-button.danger {
+      border: 0;
+      background: linear-gradient(180deg, #f64d5b, #da2d3b);
+      color: #ffffff;
+    }
+
+    /* =========================================================
+       TOAST
+    ========================================================= */
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 1000;
+      min-width: 250px;
+      min-height: 47px;
+      padding: 0 15px;
+      border-radius: 8px;
+      background: #111c38;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 10px;
+      font-weight: 700;
+      box-shadow: 0 17px 42px rgba(15, 23, 42, 0.28);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(20px);
+      transition:
+        opacity 0.25s ease,
+        transform 0.25s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast svg {
+      width: 17px;
+      height: 17px;
+      color: #4ade80;
+    }
+
+    /* =========================================================
+       RESPONSIVE
+    ========================================================= */
+
+    @media (max-width: 1300px) {
+      .settings-form {
+        grid-template-columns: repeat(3, minmax(170px, 1fr));
+      }
+    }
+
+    @media (max-width: 1050px) {
+      .app {
+        grid-template-columns: 76px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        width: 76px;
+      }
+
+      .brand-logo {
+        width: 76px;
+      }
+
+      .brand-info,
+      .nav-item span,
+      .sidebar-status-text,
+      .sidebar-status svg {
+        display: none;
+      }
+
+      .navigation {
+        padding-inline: 10px;
+      }
+
+      .nav-item {
+        padding: 0;
+        justify-content: center;
+      }
+
+      .sidebar-status {
+        padding: 0;
+        justify-content: center;
+      }
+
+      .workspace {
+        grid-column: 2;
+      }
+
+      .settings-form {
+        grid-template-columns: repeat(2, minmax(170px, 1fr));
+      }
+
+      .lower-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar {
+        position: static;
+        width: 100%;
+      }
+
+      .brand {
+        height: 64px;
+      }
+
+      .brand-logo {
+        width: 58px;
+        height: 64px;
+      }
+
+      .brand-info {
+        display: block;
+      }
+
+      .navigation {
+        padding: 10px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .nav-item {
+        width: 100%;
+      }
+
+      .sidebar-status {
+        display: none;
+      }
+
+      .topbar {
+        padding: 0 14px;
+      }
+
+      .topbar-left {
+        gap: 18px;
+      }
+
+      .user-menu {
+        min-width: auto;
+      }
+
+      .admin-info {
+        display: none;
+      }
+
+      .main {
+        padding: 17px 10px;
+      }
+
+      .settings-tabs {
+        align-items: center;
+      }
+
+      .settings-form {
+        grid-template-columns: 1fr;
+      }
+
+      .placeholder-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .maintenance-item {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        padding-block: 6px;
+      }
+
+      .maintenance-info {
+        min-width: calc(100% - 55px);
+      }
+
+      .outline-action {
+        margin-left: 52px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/standalone-shared.css?v=20260714-84" />
+</head>
+
+<body class="live-page-entering">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <i data-lucide="users-round"></i>
+        </div>
+
+        <div class="brand-info">
+          <h1>GMS</h1>
+          <p>Attendance Server</p>
+        </div>
+      </div>
+
+      <nav class="navigation">
+        <button class="nav-item" data-page="Dashboard">
+          <i data-lucide="house"></i>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-item" data-page="Time Card">
+          <i data-lucide="calendar-days"></i>
+          <span>Time Card</span>
+        </button>
+
+        <button class="nav-item" data-page="Enrollment">
+          <i data-lucide="fingerprint"></i>
+          <span>Enrollment</span>
+        </button>
+
+        <button class="nav-item" data-page="Employees">
+          <i data-lucide="users-round"></i>
+          <span>Employees</span>
+        </button>
+
+        <button class="nav-item" data-page="Devices">
+          <i data-lucide="monitor-smartphone"></i>
+          <span>Devices</span>
+        </button>
+
+        <button class="nav-item active" data-page="Settings">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </button>
+
+        <button class="nav-item" data-page="Logs">
+          <i data-lucide="notebook-tabs"></i>
+          <span>Logs</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-status">
+        <span class="online-dot"></span>
+
+        <div class="sidebar-status-text">
+          <strong>Online</strong>
+          <span>Asia/Manila</span>
+        </div>
+
+        <i data-lucide="chevron-right"></i>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="top-icon menu" title="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+
+          <button class="top-icon" title="Messages">
+            <i data-lucide="mail"></i>
+          </button>
+
+          <button class="top-icon" title="Notifications">
+            <i data-lucide="bell"></i>
+            <span class="notification-count">3</span>
+          </button>
+
+          <button class="top-icon" title="Calendar">
+            <i data-lucide="calendar-days"></i>
+          </button>
+
+          <button class="top-icon" title="Help">
+            <i data-lucide="circle-help"></i>
+          </button>
+        </div>
+
+        <div class="user-menu">
+          <div class="admin-avatar">
+            <img
+              src="/images/gwd-logo.jpg"
+              alt="GWD logo"
+            />
+          </div>
+
+          <div class="admin-info">
+            <strong>GWD Administrator</strong>
+            <span>Main Branch</span>
+          </div>
+
+          <i data-lucide="chevron-down"></i>
+        </div>
+      </header>
+
+      <main class="main">
+        <header class="page-header">
+          <div class="page-heading">
+            <h2>Settings</h2>
+            <p>Configure attendance rules and system preferences</p>
+          </div>
+        </header>
+
+        <nav class="settings-tabs">
+          <button
+            class="settings-tab active"
+            data-tab="general"
+          >
+            <i data-lucide="settings"></i>
+            General Settings
+          </button>
+
+          <button
+            class="settings-tab"
+            data-tab="attendance"
+          >
+            <i data-lucide="clock-3"></i>
+            Attendance Rules
+          </button>
+
+          <button
+            class="settings-tab"
+            data-tab="notifications"
+          >
+            <i data-lucide="bell"></i>
+            Notifications
+          </button>
+
+          <button
+            class="settings-tab"
+            data-tab="devices"
+          >
+            <i data-lucide="monitor-cog"></i>
+            Device Settings
+          </button>
+
+          <button
+            class="settings-tab"
+            data-tab="system"
+          >
+            <i data-lucide="shield-check"></i>
+            System
+          </button>
+
+          <button
+            class="settings-tab"
+            data-tab="backup"
+          >
+            <i data-lucide="database"></i>
+            Backup &amp; Maintenance
+          </button>
+        </nav>
+
+        <section
+          class="tab-content active"
+          id="generalContent"
+        >
+          <article class="panel general-panel">
+            <div class="panel-heading">
+              <h3>General Settings</h3>
+              <p>
+                Configure basic system information and default values.
+              </p>
+            </div>
+
+            <form class="settings-form" id="generalSettingsForm">
+              <div class="form-group">
+                <label for="branchSelect">Company / Branch</label>
+
+                <div class="form-control">
+                  <select id="branchSelect">
+                    <option>Main Branch</option>
+                    <option>Pampanga Branch</option>
+                    <option>Cubao Branch</option>
+                  </select>
+
+                  <i data-lucide="chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="defaultTimeIn">Default Time In</label>
+
+                <div class="form-control">
+                  <input
+                    id="defaultTimeIn"
+                    type="text"
+                    value="09:00 AM"
+                  />
+
+                  <i data-lucide="clock-3"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="defaultTimeOut">Default Time Out</label>
+
+                <div class="form-control">
+                  <input
+                    id="defaultTimeOut"
+                    type="text"
+                    value="06:00 PM"
+                  />
+
+                  <i data-lucide="clock-3"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="gracePeriod">
+                  Grace Period (Minutes)
+                </label>
+
+                <div class="form-control">
+                  <input
+                    id="gracePeriod"
+                    type="number"
+                    min="0"
+                    value="10"
+                  />
+                </div>
+
+                <span class="form-helper">
+                  Allowed minutes after time in
+                </span>
+              </div>
+
+              <div class="form-group">
+                <label for="breakStart">Break Start</label>
+
+                <div class="form-control">
+                  <input
+                    id="breakStart"
+                    type="text"
+                    value="12:00 PM"
+                  />
+
+                  <i data-lucide="clock-3"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="breakEnd">Break End</label>
+
+                <div class="form-control">
+                  <input
+                    id="breakEnd"
+                    type="text"
+                    value="01:00 PM"
+                  />
+
+                  <i data-lucide="clock-3"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="breakDuration">
+                  Break Duration (Minutes)
+                </label>
+
+                <div class="form-control">
+                  <input
+                    id="breakDuration"
+                    type="number"
+                    min="0"
+                    value="60"
+                  />
+                </div>
+
+                <span class="form-helper">
+                  Deducted from working hours
+                </span>
+              </div>
+
+              <div class="form-group">
+                <label for="regularHours">
+                  Required Regular Hours
+                </label>
+
+                <div class="form-control">
+                  <input
+                    id="regularHours"
+                    type="number"
+                    min="0"
+                    value="8"
+                  />
+                </div>
+
+                <span class="form-helper">
+                  Hours needed for a full day
+                </span>
+              </div>
+
+              <div class="form-group">
+                <label for="overtimeThreshold">
+                  Overtime Threshold (Hours)
+                </label>
+
+                <div class="form-control">
+                  <input
+                    id="overtimeThreshold"
+                    type="number"
+                    min="0"
+                    value="8"
+                  />
+                </div>
+
+                <span class="form-helper">
+                  Hours beyond regular hours
+                </span>
+              </div>
+
+              <div class="form-group">
+                <label for="lateThreshold">
+                  Late Threshold (Minutes)
+                </label>
+
+                <div class="form-control">
+                  <input
+                    id="lateThreshold"
+                    type="number"
+                    min="0"
+                    value="10"
+                  />
+                </div>
+
+                <span class="form-helper">
+                  Minutes after time in
+                </span>
+              </div>
+
+              <div class="form-group">
+                <label for="undertimeThreshold">
+                  Undertime Threshold (Minutes)
+                </label>
+
+                <div class="form-control">
+                  <input
+                    id="undertimeThreshold"
+                    type="number"
+                    min="0"
+                    value="10"
+                  />
+                </div>
+
+                <span class="form-helper">
+                  Minutes before time out
+                </span>
+              </div>
+
+              <div class="form-group">
+                <label for="dateFormat">Date Format</label>
+
+                <div class="form-control">
+                  <select id="dateFormat">
+                    <option>
+                      MMM DD, YYYY ()
+                    </option>
+
+                    <option>
+                      MM/DD/YYYY (05/23/2026)
+                    </option>
+
+                    <option>
+                      DD/MM/YYYY (23/05/2026)
+                    </option>
+
+                    <option>
+                      YYYY-MM-DD (2026-05-23)
+                    </option>
+                  </select>
+
+                  <i data-lucide="chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="timeFormat">Time Format</label>
+
+                <div class="form-control">
+                  <select id="timeFormat">
+                    <option>12-Hour (AM/PM)</option>
+                    <option>24-Hour</option>
+                  </select>
+
+                  <i data-lucide="chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="dayStart">Day Start</label>
+
+                <div class="form-control">
+                  <select id="dayStart">
+                    <option>12:00 AM</option>
+                    <option>01:00 AM</option>
+                    <option>04:00 AM</option>
+                    <option>06:00 AM</option>
+                  </select>
+
+                  <i data-lucide="chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="weekStart">Week Start</label>
+
+                <div class="form-control">
+                  <select id="weekStart">
+                    <option>Monday</option>
+                    <option>Sunday</option>
+                    <option>Saturday</option>
+                  </select>
+
+                  <i data-lucide="chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="timezone">Timezone</label>
+
+                <div class="form-control">
+                  <select id="timezone">
+                    <option>
+                      (GMT+08:00) Asia/Manila
+                    </option>
+
+                    <option>
+                      (GMT+08:00) Asia/Singapore
+                    </option>
+
+                    <option>
+                      (GMT+09:00) Asia/Tokyo
+                    </option>
+
+                    <option>
+                      (GMT+00:00) UTC
+                    </option>
+                  </select>
+
+                  <i data-lucide="chevron-down"></i>
+                </div>
+              </div>
+            </form>
+
+            <div class="save-row">
+              <button
+                class="primary-button"
+                id="saveGeneralSettings"
+              >
+                Save Changes
+              </button>
+            </div>
+          </article>
+
+          <section class="lower-grid">
+            <article class="panel options-panel">
+              <h3>System Options</h3>
+
+              <div class="option-list">
+                <div class="option-item">
+                  <div class="option-icon green">
+                    <i data-lucide="fingerprint"></i>
+                  </div>
+
+                  <div class="option-info">
+                    <strong>Fingerprint Required</strong>
+
+                    <span>
+                      Require fingerprint for time in/out
+                    </span>
+                  </div>
+
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      checked
+                      data-option="Fingerprint Required"
+                    />
+
+                    <span class="switch-track"></span>
+                  </label>
+                </div>
+
+                <div class="option-item">
+                  <div class="option-icon blue">
+                    <i data-lucide="circle-alert"></i>
+                  </div>
+
+                  <div class="option-info">
+                    <strong>Allow Early Out</strong>
+
+                    <span>
+                      Allow employees to time out early
+                    </span>
+                  </div>
+
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      data-option="Allow Early Out"
+                    />
+
+                    <span class="switch-track"></span>
+                  </label>
+                </div>
+
+                <div class="option-item">
+                  <div class="option-icon purple">
+                    <i data-lucide="coffee"></i>
+                  </div>
+
+                  <div class="option-info">
+                    <strong>Break Deduction</strong>
+
+                    <span>
+                      Automatically deduct break time
+                    </span>
+                  </div>
+
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      checked
+                      data-option="Break Deduction"
+                    />
+
+                    <span class="switch-track"></span>
+                  </label>
+                </div>
+
+                <div class="option-item">
+                  <div class="option-icon orange">
+                    <i data-lucide="clock-3"></i>
+                  </div>
+
+                  <div class="option-info">
+                    <strong>Overtime Approval</strong>
+
+                    <span>
+                      Require approval for overtime hours
+                    </span>
+                  </div>
+
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      checked
+                      data-option="Overtime Approval"
+                    />
+
+                    <span class="switch-track"></span>
+                  </label>
+                </div>
+
+                <div class="option-item">
+                  <div class="option-icon red">
+                    <i data-lucide="bell"></i>
+                  </div>
+
+                  <div class="option-info">
+                    <strong>Late Notification</strong>
+
+                    <span>
+                      Send notification for late arrivals
+                    </span>
+                  </div>
+
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      checked
+                      data-option="Late Notification"
+                    />
+
+                    <span class="switch-track"></span>
+                  </label>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel maintenance-panel">
+              <h3>Maintenance</h3>
+
+              <div class="maintenance-list">
+                <div class="maintenance-item">
+                  <div class="maintenance-icon red">
+                    <i data-lucide="trash-2"></i>
+                  </div>
+
+                  <div class="maintenance-info">
+                    <strong>Clear Attendance Logs</strong>
+
+                    <span>
+                      Delete all attendance logs permanently
+                    </span>
+                  </div>
+
+                  <button
+                    class="outline-action red maintenance-action"
+                    data-action="clear-logs"
+                  >
+                    Clear Logs
+                  </button>
+                </div>
+
+                <div class="maintenance-item">
+                  <div class="maintenance-icon orange">
+                    <i data-lucide="users"></i>
+                  </div>
+
+                  <div class="maintenance-info">
+                    <strong>Clear Pending Registrations</strong>
+
+                    <span>
+                      Remove all pending fingerprint registrations
+                    </span>
+                  </div>
+
+                  <button
+                    class="outline-action orange maintenance-action"
+                    data-action="clear-pending"
+                  >
+                    Clear Pending
+                  </button>
+                </div>
+
+                <div class="maintenance-item">
+                  <div class="maintenance-icon green">
+                    <i data-lucide="download"></i>
+                  </div>
+
+                  <div class="maintenance-info">
+                    <strong>Export Database</strong>
+
+                    <span>
+                      Download a backup of the current database
+                    </span>
+                  </div>
+
+                  <button
+                    class="outline-action green maintenance-action"
+                    data-action="export-database"
+                  >
+                    Export DB
+                  </button>
+                </div>
+
+                <div class="maintenance-item">
+                  <div class="maintenance-icon blue">
+                    <i data-lucide="refresh-cw"></i>
+                  </div>
+
+                  <div class="maintenance-info">
+                    <strong>Reset System Settings</strong>
+
+                    <span>
+                      Reset all settings to default values
+                    </span>
+                  </div>
+
+                  <button
+                    class="outline-action blue maintenance-action"
+                    data-action="reset-settings"
+                  >
+                    Reset Settings
+                  </button>
+                </div>
+              </div>
+
+              <div class="warning-note">
+                <i data-lucide="info"></i>
+
+                <span>
+                  Please be careful with these actions. Some operations
+                  cannot be undone.
+                </span>
+              </div>
+            </article>
+          </section>
+        </section>
+
+        <section
+          class="tab-content"
+          id="attendanceContent"
+        >
+          <article class="panel placeholder-panel">
+            <h3>Attendance Rules</h3>
+
+            <p>
+              Configure employee attendance, late, undertime, overtime,
+              and absence rules.
+            </p>
+
+            <div class="placeholder-grid">
+              <div class="placeholder-card">
+                <h4>Late Calculation</h4>
+                <p>
+                  Set late grace period, late deductions, and automatic
+                  late classification.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Undertime Calculation</h4>
+                <p>
+                  Configure undertime thresholds and deduction rules.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Overtime Rules</h4>
+                <p>
+                  Require approval and configure overtime rounding.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Absence Rules</h4>
+                <p>
+                  Configure no-work-no-pay and automatic absence
+                  detection.
+                </p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section
+          class="tab-content"
+          id="notificationsContent"
+        >
+          <article class="panel placeholder-panel">
+            <h3>Notifications</h3>
+
+            <p>
+              Configure system alerts and employee attendance
+              notifications.
+            </p>
+
+            <div class="placeholder-grid">
+              <div class="placeholder-card">
+                <h4>Late Alerts</h4>
+                <p>
+                  Send notifications when employees arrive late.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Missing Time Out</h4>
+                <p>
+                  Notify administrators about incomplete time records.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Device Alerts</h4>
+                <p>
+                  Receive alerts when devices go offline or fail to sync.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Approval Alerts</h4>
+                <p>
+                  Notify administrators of pending overtime and
+                  correction requests.
+                </p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section
+          class="tab-content"
+          id="devicesContent"
+        >
+          <article class="panel placeholder-panel">
+            <h3>Device Settings</h3>
+
+            <p>
+              Configure attendance terminals, synchronization, and
+              connectivity preferences.
+            </p>
+
+            <div class="placeholder-grid">
+              <div class="placeholder-card">
+                <h4>Automatic Sync</h4>
+                <p>
+                  Set how often devices synchronize attendance logs.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Offline Storage</h4>
+                <p>
+                  Configure local log storage when the server is
+                  unavailable.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Device Timeout</h4>
+                <p>
+                  Mark devices offline after a specified period.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Firmware Updates</h4>
+                <p>
+                  Manage device firmware and update schedules.
+                </p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section
+          class="tab-content"
+          id="systemContent"
+        >
+          <article class="panel placeholder-panel">
+            <h3>System</h3>
+
+            <p>
+              Configure security, administrator access, and system-wide
+              preferences.
+            </p>
+
+            <div class="placeholder-grid">
+              <div class="placeholder-card">
+                <h4>Administrator Access</h4>
+                <p>
+                  Manage roles and permissions for system administrators.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Session Security</h4>
+                <p>
+                  Configure session timeouts and sign-in requirements.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Audit Logs</h4>
+                <p>
+                  Record system changes and administrator activity.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Server Information</h4>
+                <p>
+                  View server version, environment, and connectivity.
+                </p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section
+          class="tab-content"
+          id="backupContent"
+        >
+          <article class="panel placeholder-panel">
+            <h3>Backup &amp; Maintenance</h3>
+
+            <p>
+              Manage backups, restoration, database maintenance, and
+              system cleanup.
+            </p>
+
+            <div class="placeholder-grid">
+              <div class="placeholder-card">
+                <h4>Automatic Backup</h4>
+                <p>
+                  Schedule daily, weekly, or monthly database backups.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Restore Backup</h4>
+                <p>
+                  Restore the attendance database from a saved backup.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>Database Cleanup</h4>
+                <p>
+                  Remove old temporary files and archived records.
+                </p>
+              </div>
+
+              <div class="placeholder-card">
+                <h4>System Health</h4>
+                <p>
+                  Review database status and server maintenance results.
+                </p>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="confirmationModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="confirmationTitle">Confirm Action</h3>
+
+        <button class="modal-close" id="closeConfirmationModal">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-message" id="confirmationMessage">
+          Confirm the selected maintenance action.
+        </p>
+
+        <div
+          class="modal-warning"
+          id="confirmationWarning"
+        >
+          This action may not be reversible.
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button
+          class="modal-button cancel"
+          id="cancelConfirmation"
+        >
+          Cancel
+        </button>
+
+        <button
+          class="modal-button danger"
+          id="confirmMaintenanceAction"
+        >
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">
+    <i data-lucide="circle-check"></i>
+    <span id="toastMessage">Settings saved.</span>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toastMessage");
+
+    const confirmationModal =
+      document.getElementById("confirmationModal");
+
+    const confirmationTitle =
+      document.getElementById("confirmationTitle");
+
+    const confirmationMessage =
+      document.getElementById("confirmationMessage");
+
+    const confirmationWarning =
+      document.getElementById("confirmationWarning");
+
+    const confirmMaintenanceAction =
+      document.getElementById("confirmMaintenanceAction");
+
+    let selectedMaintenanceAction = "";
+    let toastTimer;
+
+    const maintenanceActions = {
+      "clear-logs": {
+        title: "Clear Attendance Logs",
+        message:
+          "Are you sure you want to permanently delete all attendance logs?",
+        warning:
+          "All time-in, time-out, late, undertime, overtime, and verification records will be removed.",
+        button: "Clear Logs",
+        danger: true,
+        success: "All attendance logs were cleared."
+      },
+
+      "clear-pending": {
+        title: "Clear Pending Registrations",
+        message:
+          "Remove all pending fingerprint registration requests?",
+        warning:
+          "Employees with incomplete enrollment will need to start the registration process again.",
+        button: "Clear Pending",
+        danger: true,
+        success: "Pending registrations were cleared."
+      },
+
+      "export-database": {
+        title: "Export Database",
+        message:
+          "Create and download a backup of the current attendance database?",
+        warning:
+          "The export may take a few moments depending on the number of records.",
+        button: "Export Database",
+        danger: false,
+        success: "Database backup exported successfully."
+      },
+
+      "reset-settings": {
+        title: "Reset System Settings",
+        message:
+          "Reset all attendance and system settings to their default values?",
+        warning:
+          "Custom schedules, thresholds, notification settings, and device preferences will be replaced.",
+        button: "Reset Settings",
+        danger: true,
+        success: "System settings were reset to default values."
+      }
+    };
+
+    function showToast(message) {
+      toastMessage.textContent = message;
+      toast.classList.add("show");
+
+      clearTimeout(toastTimer);
+
+      toastTimer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2300);
+    }
+
+    function openConfirmation(action) {
+      const config = maintenanceActions[action];
+
+      if (!config) {
+        return;
+      }
+
+      selectedMaintenanceAction = action;
+
+      confirmationTitle.textContent = config.title;
+      confirmationMessage.textContent = config.message;
+      confirmationWarning.textContent = config.warning;
+      confirmMaintenanceAction.textContent = config.button;
+
+      confirmMaintenanceAction.className = config.danger
+        ? "modal-button danger"
+        : "modal-button confirm";
+
+      confirmationModal.classList.add("show");
+    }
+
+    function closeConfirmation() {
+      confirmationModal.classList.remove("show");
+      selectedMaintenanceAction = "";
+    }
+
+    function exportDatabase() {
+      const data = {
+        exportedAt: new Date().toISOString(),
+        branch: document.getElementById("branchSelect").value,
+        defaultTimeIn:
+          document.getElementById("defaultTimeIn").value,
+        defaultTimeOut:
+          document.getElementById("defaultTimeOut").value,
+        gracePeriod:
+          document.getElementById("gracePeriod").value,
+        breakStart:
+          document.getElementById("breakStart").value,
+        breakEnd:
+          document.getElementById("breakEnd").value,
+        breakDuration:
+          document.getElementById("breakDuration").value,
+        regularHours:
+          document.getElementById("regularHours").value,
+        overtimeThreshold:
+          document.getElementById("overtimeThreshold").value,
+        lateThreshold:
+          document.getElementById("lateThreshold").value,
+        undertimeThreshold:
+          document.getElementById("undertimeThreshold").value,
+        dateFormat:
+          document.getElementById("dateFormat").value,
+        timeFormat:
+          document.getElementById("timeFormat").value,
+        timezone:
+          document.getElementById("timezone").value
+      };
+
+      const blob = new Blob(
+        [JSON.stringify(data, null, 2)],
+        {
+          type: "application/json"
+        }
+      );
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = "gms-attendance-database-backup.json";
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(url);
+    }
+
+    function resetSettings() {
+      document.getElementById("branchSelect").value =
+        "Main Branch";
+
+      document.getElementById("defaultTimeIn").value =
+        "09:00 AM";
+
+      document.getElementById("defaultTimeOut").value =
+        "06:00 PM";
+
+      document.getElementById("gracePeriod").value = "10";
+      document.getElementById("breakStart").value =
+        "12:00 PM";
+
+      document.getElementById("breakEnd").value =
+        "01:00 PM";
+
+      document.getElementById("breakDuration").value = "60";
+      document.getElementById("regularHours").value = "8";
+      document.getElementById("overtimeThreshold").value = "8";
+      document.getElementById("lateThreshold").value = "10";
+      document.getElementById("undertimeThreshold").value = "10";
+
+      document.getElementById("dateFormat").selectedIndex = 0;
+      document.getElementById("timeFormat").selectedIndex = 0;
+      document.getElementById("dayStart").selectedIndex = 0;
+      document.getElementById("weekStart").selectedIndex = 0;
+      document.getElementById("timezone").selectedIndex = 0;
+
+      const switches = document.querySelectorAll(
+        ".switch input"
+      );
+
+      switches.forEach((input, index) => {
+        input.checked = index !== 1;
+      });
+    }
+
+    document
+      .querySelectorAll(".settings-tab")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          document
+            .querySelectorAll(".settings-tab")
+            .forEach((tab) => {
+              tab.classList.remove("active");
+            });
+
+          document
+            .querySelectorAll(".tab-content")
+            .forEach((content) => {
+              content.classList.remove("active");
+            });
+
+          button.classList.add("active");
+
+          const targetId =
+            `${button.dataset.tab}Content`;
+
+          const targetContent =
+            document.getElementById(targetId);
+
+          if (targetContent) {
+            targetContent.classList.add("active");
+          }
+        });
+      });
+
+    document
+      .querySelectorAll(".nav-item")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          document
+            .querySelectorAll(".nav-item")
+            .forEach((item) => {
+              item.classList.remove("active");
+            });
+
+          button.classList.add("active");
+
+          showToast(
+            `${button.dataset.page} selected.`
+          );
+        });
+      });
+
+    document
+      .getElementById("saveGeneralSettings")
+      .addEventListener("click", () => {
+        const button =
+          document.getElementById("saveGeneralSettings");
+
+        button.disabled = true;
+        button.textContent = "Saving...";
+
+        setTimeout(() => {
+          button.disabled = false;
+          button.textContent = "Save Changes";
+
+          showToast(
+            "General settings saved successfully."
+          );
+        }, 650);
+      });
+
+    document
+      .querySelectorAll(".switch input")
+      .forEach((input) => {
+        input.addEventListener("change", () => {
+          const state = input.checked
+            ? "enabled"
+            : "disabled";
+
+          showToast(
+            `${input.dataset.option} ${state}.`
+          );
+        });
+      });
+
+    document
+      .querySelectorAll(".maintenance-action")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          openConfirmation(button.dataset.action);
+        });
+      });
+
+    document
+      .getElementById("closeConfirmationModal")
+      .addEventListener("click", closeConfirmation);
+
+    document
+      .getElementById("cancelConfirmation")
+      .addEventListener("click", closeConfirmation);
+
+    confirmMaintenanceAction.addEventListener("click", () => {
+      const action = selectedMaintenanceAction;
+      const config = maintenanceActions[action];
+
+      if (!config) {
+        return;
+      }
+
+      if (action === "export-database") {
+        exportDatabase();
+      }
+
+      if (action === "reset-settings") {
+        resetSettings();
+      }
+
+      closeConfirmation();
+      showToast(config.success);
+    });
+
+    confirmationModal.addEventListener(
+      "click",
+      (event) => {
+        if (event.target === confirmationModal) {
+          closeConfirmation();
+        }
+      }
+    );
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeConfirmation();
+      }
+    });
+  </script>
+  <script src="/functional-pages.js?v=20260714-87"></script>
+</body>
+</html>

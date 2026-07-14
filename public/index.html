@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GWD Attendance Server</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <span class="brand-mark"><img src="/images/gwd-logo.jpg" alt="Gluta White Distributor logo"></span>
+        <div>
+          <strong>GWD Attendance</strong>
+          <span id="branchLabel">Main Branch</span>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="Main">
+        <button class="nav-item active" data-view="dashboardView"><span class="nav-icon icon-dashboard" aria-hidden="true"></span>Dashboard</button>
+        <button class="nav-item" data-view="timeCardView"><span class="nav-icon icon-timecard" aria-hidden="true"></span>Time Card</button>
+        <button class="nav-item" data-view="enrollmentView"><span class="nav-icon icon-fingerprint" aria-hidden="true"></span>Enrollment</button>
+        <button class="nav-item" data-view="employeesView"><span class="nav-icon icon-employee" aria-hidden="true"></span>Employees</button>
+        <button class="nav-item" data-view="devicesView"><span class="nav-icon icon-device" aria-hidden="true"></span>Devices</button>
+        <button class="nav-item" data-view="settingsView"><span class="nav-icon icon-settings" aria-hidden="true"></span>Settings</button>
+        <button class="nav-item" data-view="logsView"><span class="nav-icon icon-logs" aria-hidden="true"></span>Logs</button>
+      </nav>
+
+      <div class="sidebar-status">
+        <span id="serverStatusDot" class="dot"></span>
+        <span><b id="serverStatusText">Checking server</b><small>Asia/Manila</small></span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="pagebar">
+        <div>
+          <h1 id="viewTitle">Dashboard</h1>
+          <p id="viewSubtitle">Operations overview</p>
+        </div>
+        <div class="pagebar-actions">
+          <button id="refreshBtn" class="secondary"><span class="button-icon icon-refresh" aria-hidden="true"></span>Refresh</button>
+        </div>
+      </header>
+
+      <div id="viewContainer" aria-live="polite">
+        <div class="panel">Loading attendance pages...</div>
+      </div>
+    </main>
+  </div>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden">
+    <div class="modal large-modal">
+      <div class="modal-header">
+        <div>
+          <h2 id="modalTitle">Register Employee</h2>
+          <p id="modalSubtitle">Fingerprint ID</p>
+        </div>
+        <button id="closeModalBtn" class="icon">Close</button>
+      </div>
+
+      <form id="employeeForm" class="form">
+        <input type="hidden" id="employeeIdInput">
+        <input type="hidden" id="fingerprintIdInput">
+
+        <div class="grid-2">
+          <label>Full Name <input id="fullNameInput" required placeholder="Juan Dela Cruz"></label>
+          <label>Fingerprint ID <input id="fingerprintDisplayInput" disabled></label>
+        </div>
+
+        <div class="grid-2">
+          <label>Fingerprint Label <input id="fingerprintLabelInput" value="Primary Finger"></label>
+          <label>Grace Minutes <input id="graceMinutesInput" type="number" min="0" value="10" required></label>
+        </div>
+
+        <div class="schedule-card">
+          <h3>Weekly Schedule</h3>
+          <div class="schedule-head">
+            <span>Day</span><span>Day Off</span><span>Time In</span><span>Time Out</span>
+          </div>
+          <div id="scheduleRows" class="schedule-rows"></div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelBtn" class="secondary">Cancel</button>
+          <button type="submit" id="saveEmployeeBtn">Save Employee</button>
+        </div>
+        <p id="formMessage" class="form-message"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="timeCardModalBackdrop" class="modal-backdrop hidden">
+    <div class="modal timecard-modal">
+      <div class="modal-header timecard-modal-header">
+        <div>
+          <h2 id="timeCardModalTitle">Employee Time Card</h2>
+          <p id="timeCardModalSubtitle">Semi-monthly cutoff report</p>
+        </div>
+        <div class="modal-actions timecard-modal-actions">
+          <button id="saveTimeCardPhotoBtn" type="button">Save Photo</button>
+          <button id="saveTimeCardPdfBtn" type="button" class="secondary">Save PDF</button>
+          <button id="closeTimeCardModalBtn" type="button" class="icon">Close</button>
+        </div>
+      </div>
+      <p id="timeCardModalMessage" class="form-message"></p>
+      <div id="timeCardModalReport"></div>
+    </div>
+  </div>
+
+  <script src="/views-loader.js"></script>
+</body>
+</html>

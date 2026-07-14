@@ -1,0 +1,19 @@
+{
+  "name": "gms-attendance-server-timecard",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check storage.js",
+    "test": "node --test tests/*.test.js",
+    "db:sqlite:sync": "python seed.py --no-backup",
+    "db:sqlite:backup": "python seed.py",
+    "db:postgres:backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup-postgres.ps1",
+    "db:postgres:restore:validate": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restore-postgres.ps1"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.2",
+    "@supabase/supabase-js": "^2.110.5",
+    "pg": "^8.16.3"
+  }
+}

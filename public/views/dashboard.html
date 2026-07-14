@@ -1,0 +1,2544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GMS Attendance Server</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      --page-bg: #f5f8fc;
+      --card-bg: #ffffff;
+      --sidebar-bg: #ffffff;
+
+      --navy: #12213d;
+      --text: #23314d;
+      --muted: #75829b;
+
+      --border: #dce4ef;
+      --border-soft: #e9eef5;
+
+      --green: #07866f;
+      --green-dark: #066b5a;
+      --green-soft: #eaf8f4;
+
+      --orange: #ef8500;
+      --orange-soft: #fff4e5;
+
+      --red: #ec2737;
+      --red-soft: #fff0f1;
+
+      --purple: #7137b3;
+      --purple-soft: #f4effc;
+
+      --blue: #1976d2;
+      --blue-soft: #edf5ff;
+
+      --yellow: #f3a000;
+      --yellow-soft: #fff7e3;
+
+      --shadow:
+        0 1px 2px rgba(16, 24, 40, 0.03),
+        0 5px 18px rgba(16, 24, 40, 0.04);
+
+      --radius: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: "Inter", sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 228px minmax(0, 1fr);
+    }
+
+    /* =========================================================
+       SIDEBAR
+    ========================================================= */
+
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 228px;
+      padding: 16px 12px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 62px;
+      padding: 0 5px 14px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .brand-logo {
+      width: 47px;
+      height: 47px;
+      flex: 0 0 47px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: linear-gradient(145deg, #172949, #091830);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      box-shadow: 0 7px 18px rgba(18, 33, 61, 0.2);
+    }
+
+    .brand-details {
+      min-width: 0;
+    }
+
+    .brand-details h1 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .brand-details p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .side-nav {
+      margin-top: 17px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-link {
+      width: 100%;
+      min-height: 43px;
+      padding: 0 13px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: #33415e;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 650;
+      transition:
+        background 0.18s ease,
+        color 0.18s ease,
+        border-color 0.18s ease,
+        transform 0.18s ease;
+    }
+
+    .nav-link i,
+    .nav-link svg {
+      width: 17px;
+      height: 17px;
+      stroke-width: 2;
+      flex: 0 0 auto;
+    }
+
+    .nav-link:hover {
+      color: var(--green-dark);
+      background: #f4faf8;
+      transform: translateX(1px);
+    }
+
+    .nav-link.active {
+      color: #075c4f;
+      background: linear-gradient(90deg, #e8f8f3, #effaf7);
+      border-color: #bee8dc;
+    }
+
+    .server-status {
+      margin-top: auto;
+      min-height: 47px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fbfcfe;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .server-status .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #15975b;
+      box-shadow: 0 0 0 4px rgba(21, 151, 91, 0.08);
+      flex: 0 0 auto;
+    }
+
+    .server-status i,
+    .server-status svg {
+      width: 15px;
+      height: 15px;
+      margin-left: auto;
+      color: var(--muted);
+    }
+
+    /* =========================================================
+       MAIN CONTENT
+    ========================================================= */
+
+    .main-content {
+      grid-column: 2;
+      min-width: 0;
+      padding: 16px 19px 18px;
+    }
+
+    .top-header {
+      min-height: 52px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .page-heading h2 {
+      color: var(--navy);
+      font-size: 24px;
+      line-height: 1.15;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .page-heading p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 700;
+      transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        background 0.18s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      min-height: 39px;
+      padding: 0 14px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      color: var(--navy);
+      font-size: 11px;
+      box-shadow: var(--shadow);
+    }
+
+    .btn-outline:hover {
+      background: #f9fbfd;
+    }
+
+    .btn-outline i,
+    .btn-outline svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .btn-primary {
+      min-height: 43px;
+      padding: 0 18px;
+      background: linear-gradient(180deg, #0a846f, #056a5a);
+      color: #ffffff;
+      font-size: 11px;
+      box-shadow: 0 6px 16px rgba(6, 107, 90, 0.18);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 9px 20px rgba(6, 107, 90, 0.23);
+    }
+
+    .btn-primary i,
+    .btn-primary svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* =========================================================
+       FILTER BAR
+    ========================================================= */
+
+    .filter-row {
+      margin-bottom: 14px;
+      display: grid;
+      grid-template-columns: 440px minmax(220px, 285px) minmax(190px, 235px) 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .period-tabs {
+      min-height: 48px;
+      padding: 5px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #ffffff;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      box-shadow: var(--shadow);
+    }
+
+    .period-tab {
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: #33415e;
+      font-size: 11px;
+      font-weight: 700;
+      transition:
+        background 0.18s ease,
+        color 0.18s ease,
+        box-shadow 0.18s ease;
+    }
+
+    .period-tab:hover {
+      background: #f3f6fa;
+    }
+
+    .period-tab.active {
+      color: #ffffff;
+      background: linear-gradient(180deg, #0b927a, #08715f);
+      box-shadow: 0 5px 12px rgba(8, 113, 95, 0.2);
+    }
+
+    .select-control {
+      position: relative;
+      min-height: 48px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      box-shadow: var(--shadow);
+    }
+
+    .select-control > i,
+    .select-control > svg {
+      position: absolute;
+      left: 13px;
+      width: 17px;
+      height: 17px;
+      color: var(--navy);
+      pointer-events: none;
+    }
+
+    .select-control select {
+      width: 100%;
+      min-height: 46px;
+      padding: 0 39px 0 42px;
+      border: 0;
+      outline: 0;
+      appearance: none;
+      background: transparent;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .select-control input[type="date"] {
+      width: 100%;
+      min-height: 46px;
+      padding: 0 13px 0 42px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+
+    .select-control input[type="date"]::-webkit-calendar-picker-indicator {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      opacity: .78;
+    }
+
+    .select-control .select-arrow {
+      left: auto;
+      right: 13px;
+      width: 14px;
+      height: 14px;
+      color: var(--navy);
+    }
+
+    .verify-action {
+      justify-self: end;
+    }
+
+    /* =========================================================
+       STAT CARDS
+    ========================================================= */
+
+    .stats-grid {
+      margin-bottom: 13px;
+      display: grid;
+      grid-template-columns: repeat(8, minmax(120px, 1fr));
+      gap: 11px;
+    }
+
+    .stat-card {
+      --accent: var(--green);
+      position: relative;
+      min-width: 0;
+      min-height: 99px;
+      padding: 14px 13px 11px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--accent);
+    }
+
+    .stat-card.green {
+      --accent: var(--green);
+    }
+
+    .stat-card.orange {
+      --accent: var(--orange);
+    }
+
+    .stat-card.red {
+      --accent: var(--red);
+    }
+
+    .stat-card.purple {
+      --accent: var(--purple);
+    }
+
+    .stat-card.yellow {
+      --accent: var(--yellow);
+    }
+
+    .stat-card.blue {
+      --accent: var(--blue);
+    }
+
+    .stat-label {
+      color: #46526b;
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .stat-content {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 9px;
+    }
+
+    .stat-value {
+      color: var(--navy);
+      font-size: 24px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .stat-icon {
+      color: var(--accent);
+      flex: 0 0 auto;
+    }
+
+    .stat-icon i,
+    .stat-icon svg {
+      width: 27px;
+      height: 27px;
+      stroke-width: 2.15;
+    }
+
+    .stat-comparison {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .stat-comparison.up-green {
+      color: #16965a;
+    }
+
+    .stat-comparison.up-orange {
+      color: #e37b00;
+    }
+
+    .stat-comparison.up-red {
+      color: #e82838;
+    }
+
+    /* =========================================================
+       PANELS
+    ========================================================= */
+
+    .dashboard-row {
+      margin-bottom: 13px;
+      display: grid;
+      gap: 13px;
+    }
+
+    .dashboard-row.upper {
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.13fr);
+    }
+
+    .dashboard-row.lower {
+      grid-template-columns:
+        minmax(0, 1.48fr)
+        minmax(260px, 0.65fr)
+        minmax(280px, 0.74fr);
+    }
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      min-height: 47px;
+      padding: 0 15px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-title {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .panel-title .subtext {
+      color: #5f6b82;
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .panel-title i,
+    .panel-title svg {
+      width: 14px;
+      height: 14px;
+      color: var(--muted);
+    }
+
+    .small-control {
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 700;
+      outline: none;
+    }
+
+    button.small-control:hover {
+      background: #f8fafc;
+    }
+
+    /* =========================================================
+       CHART
+    ========================================================= */
+
+    .chart-area {
+      height: 249px;
+      padding: 13px 15px 7px;
+    }
+
+    .chart-area canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* =========================================================
+       TABLE
+    ========================================================= */
+
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .data-table thead {
+      background: #fbfcfe;
+    }
+
+    .data-table th {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #6f7c94;
+      text-align: left;
+      font-size: 8px;
+      line-height: 1.2;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .data-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #3b4963;
+      font-size: 9px;
+      line-height: 1.35;
+      vertical-align: middle;
+    }
+
+    .data-table tbody tr {
+      transition: background 0.15s ease;
+    }
+
+    .data-table tbody tr:hover {
+      background: #fbfdfd;
+    }
+
+    .employee-profile {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .avatar {
+      width: 28px;
+      height: 28px;
+      flex: 0 0 28px;
+      border: 2px solid #eef2f7;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #ffffff;
+      font-size: 9px;
+      font-weight: 800;
+      overflow: hidden;
+    }
+
+    .avatar.one {
+      background: linear-gradient(145deg, #99582a, #d88a52);
+    }
+
+    .avatar.two {
+      background: linear-gradient(145deg, #194d7d, #4691d5);
+    }
+
+    .avatar.three {
+      background: linear-gradient(145deg, #7c3194, #b477cb);
+    }
+
+    .avatar.four {
+      background: linear-gradient(145deg, #334155, #6b7c91);
+    }
+
+    .avatar.five {
+      background: linear-gradient(145deg, #9e402b, #df836a);
+    }
+
+    .employee-text {
+      min-width: 0;
+    }
+
+    .employee-name {
+      display: block;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .employee-id {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 0 7px;
+      border-radius: 6px;
+      font-size: 8px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-badge.pending {
+      color: #c96d00;
+      background: var(--orange-soft);
+    }
+
+    .status-badge.correction {
+      color: #df2535;
+      background: var(--red-soft);
+    }
+
+    .status-badge.verified,
+    .status-badge.present {
+      color: #08735f;
+      background: var(--green-soft);
+    }
+
+    .status-badge.leave {
+      color: #6f38ae;
+      background: var(--purple-soft);
+    }
+
+    .status-badge.info {
+      color: #176cc0;
+      background: var(--blue-soft);
+    }
+
+    .review-button {
+      min-height: 27px;
+      padding: 0 11px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--green-dark);
+      font-size: 8px;
+      font-weight: 800;
+      transition:
+        background 0.18s ease,
+        border-color 0.18s ease;
+    }
+
+    .review-button:hover {
+      background: var(--green-soft);
+      border-color: #98d8c9;
+    }
+
+    .table-footer {
+      min-height: 33px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--green-dark);
+      font-size: 9px;
+      font-weight: 800;
+    }
+
+    .table-footer i,
+    .table-footer svg {
+      width: 13px;
+      height: 13px;
+      margin-left: 5px;
+    }
+
+    .time-block strong {
+      display: block;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .time-block span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 7px;
+      white-space: nowrap;
+    }
+
+    .attendance-type,
+    .verification-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+      font-size: 8px;
+      font-weight: 650;
+    }
+
+    .attendance-type i,
+    .attendance-type svg,
+    .verification-state i,
+    .verification-state svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .attendance-type.late {
+      color: #e67e00;
+    }
+
+    .attendance-type.missing {
+      color: var(--red);
+    }
+
+    .attendance-type.good {
+      color: var(--green);
+    }
+
+    .attendance-type.leave {
+      color: var(--purple);
+    }
+
+    .attendance-type.overtime {
+      color: var(--blue);
+    }
+
+    .verification-state.pending {
+      color: #d47b00;
+    }
+
+    .verification-state.correction {
+      color: var(--red);
+    }
+
+    .verification-state.verified {
+      color: var(--green);
+    }
+
+    /* =========================================================
+       CUTOFF PANEL
+    ========================================================= */
+
+    .cutoff-body {
+      padding: 10px;
+    }
+
+    .cutoff-box {
+      padding: 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .cutoff-box + .cutoff-box {
+      margin-top: 9px;
+    }
+
+    .cutoff-box.active {
+      border-color: #c5eadf;
+      background: linear-gradient(180deg, #f4fffb, #f9fffd);
+    }
+
+    .cutoff-heading {
+      margin-bottom: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .cutoff-heading h4 {
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .period-chip {
+      min-height: 20px;
+      padding: 0 7px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .period-chip.progress {
+      color: #08735f;
+      background: var(--green-soft);
+      border: 1px solid #c1e9de;
+    }
+
+    .period-chip.upcoming {
+      color: #657188;
+      background: #f2f5f9;
+      border: 1px solid #e0e6ef;
+    }
+
+    .cutoff-detail {
+      margin-top: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: #4e5a71;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .cutoff-detail strong {
+      color: #394760;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .cutoff-detail strong.highlight {
+      color: var(--green-dark);
+    }
+
+    /* =========================================================
+       ALERTS
+    ========================================================= */
+
+    .alerts-body {
+      padding: 10px;
+    }
+
+    .alert-item {
+      min-height: 49px;
+      padding: 8px 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .alert-item + .alert-item {
+      margin-top: 8px;
+    }
+
+    .alert-icon {
+      width: 25px;
+      height: 25px;
+      flex: 0 0 25px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+    }
+
+    .alert-icon i,
+    .alert-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .alert-icon.red {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .alert-icon.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+    }
+
+    .alert-icon.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .alert-icon.purple {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .alert-text {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .alert-text strong {
+      display: block;
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .alert-text span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .alert-number {
+      min-width: 29px;
+      min-height: 23px;
+      padding: 0 7px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 800;
+    }
+
+    .alert-number.red {
+      color: var(--red);
+      background: var(--red-soft);
+      border: 1px solid #ffd1d5;
+    }
+
+    .alert-number.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+      border: 1px solid #ffe0ba;
+    }
+
+    .alert-number.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+      border: 1px solid #d0e4fb;
+    }
+
+    .alert-number.purple {
+      color: var(--purple);
+      background: var(--purple-soft);
+      border: 1px solid #e4d2f5;
+    }
+
+    /* =========================================================
+       QUICK ACTIONS
+    ========================================================= */
+
+    .quick-actions {
+      min-height: 66px;
+      padding: 12px 15px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      display: grid;
+      grid-template-columns: 145px repeat(4, minmax(150px, 1fr));
+      align-items: center;
+      gap: 58px;
+      box-shadow: var(--shadow);
+    }
+
+    .quick-actions h3 {
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .quick-button {
+      min-height: 39px;
+      padding: 0 12px;
+      border: 1px solid #cdd7e4;
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--green-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 9px;
+      font-weight: 800;
+      transition:
+        transform 0.18s ease,
+        background 0.18s ease,
+        border-color 0.18s ease;
+    }
+
+    .quick-button:hover {
+      transform: translateY(-1px);
+      background: var(--green-soft);
+      border-color: #98d8c9;
+    }
+
+    .quick-button i,
+    .quick-button svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* =========================================================
+       MODAL
+    ========================================================= */
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(3px);
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal-card {
+      width: min(480px, 100%);
+      border-radius: 12px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 25px 70px rgba(15, 23, 42, 0.25);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-header {
+      min-height: 56px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h3 {
+      color: var(--navy);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 7px;
+      background: #f2f5f9;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .modal-close i,
+    .modal-close svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .modal-content {
+      padding: 18px;
+    }
+
+    .modal-message {
+      color: #4d5b73;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .modal-footer {
+      padding: 14px 18px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      justify-content: flex-end;
+      gap: 9px;
+    }
+
+    /* =========================================================
+       TOAST
+    ========================================================= */
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 1000;
+      min-width: 250px;
+      min-height: 48px;
+      padding: 0 15px;
+      border-radius: 9px;
+      background: #10203b;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(20px);
+      transition:
+        opacity 0.25s ease,
+        transform 0.25s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast i,
+    .toast svg {
+      width: 18px;
+      height: 18px;
+      color: #4ade80;
+    }
+
+    /* =========================================================
+       RESPONSIVE
+    ========================================================= */
+
+    @media (max-width: 1500px) {
+      .stats-grid {
+        grid-template-columns: repeat(4, minmax(145px, 1fr));
+      }
+
+      .quick-actions {
+        gap: 22px;
+      }
+    }
+
+    @media (max-width: 1260px) {
+      .filter-row {
+        grid-template-columns: minmax(390px, 1.4fr) minmax(210px, 0.8fr);
+      }
+
+      .branch-filter {
+        grid-column: 1;
+      }
+
+      .verify-action {
+        grid-column: 2;
+        justify-self: stretch;
+      }
+
+      .verify-action .btn-primary {
+        width: 100%;
+      }
+
+      .dashboard-row.upper,
+      .dashboard-row.lower {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-actions {
+        grid-template-columns: repeat(2, minmax(160px, 1fr));
+        gap: 10px;
+      }
+
+      .quick-actions h3 {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .app-shell {
+        grid-template-columns: 76px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        width: 76px;
+        align-items: center;
+      }
+
+      .brand {
+        justify-content: center;
+        width: 100%;
+      }
+
+      .brand-details,
+      .nav-link span,
+      .server-status span,
+      .server-status i,
+      .server-status svg {
+        display: none;
+      }
+
+      .side-nav {
+        width: 100%;
+      }
+
+      .nav-link {
+        width: 48px;
+        margin: 0 auto;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .server-status {
+        width: 48px;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .main-content {
+        grid-column: 2;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .app-shell {
+        display: block;
+      }
+
+      .sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        padding: 10px;
+      }
+
+      .brand {
+        justify-content: flex-start;
+        border-bottom: 0;
+      }
+
+      .brand-details {
+        display: block;
+      }
+
+      .side-nav {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .nav-link {
+        width: 100%;
+      }
+
+      .server-status {
+        display: none;
+      }
+
+      .main-content {
+        padding: 13px 10px 16px;
+      }
+
+      .top-header {
+        align-items: center;
+      }
+
+      .page-heading h2 {
+        font-size: 20px;
+      }
+
+      .filter-row {
+        grid-template-columns: 1fr;
+      }
+
+      .period-tabs,
+      .branch-filter,
+      .verify-action {
+        grid-column: auto;
+      }
+
+      .verify-action {
+        justify-self: stretch;
+      }
+
+      .verify-action .btn-primary {
+        width: 100%;
+      }
+
+      .period-tabs {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+      }
+
+      .period-tab {
+        min-height: 35px;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, minmax(135px, 1fr));
+      }
+
+      .quick-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-actions h3 {
+        grid-column: auto;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/standalone-shared.css?v=20260713-70" />
+</head>
+
+<body class="live-dashboard-loading">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">GMS</div>
+
+        <div class="brand-details">
+          <h1>Attendance Server</h1>
+          <p>Main Branch</p>
+        </div>
+      </div>
+
+      <nav class="side-nav">
+        <button class="nav-link active" data-page="Dashboard">
+          <i data-lucide="house"></i>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-link" data-page="Time Card">
+          <i data-lucide="calendar-days"></i>
+          <span>Time Card</span>
+        </button>
+
+        <button class="nav-link" data-page="Enrollment">
+          <i data-lucide="fingerprint"></i>
+          <span>Enrollment</span>
+        </button>
+
+        <button class="nav-link" data-page="Employees">
+          <i data-lucide="users"></i>
+          <span>Employees</span>
+        </button>
+
+        <button class="nav-link" data-page="Devices">
+          <i data-lucide="monitor-smartphone"></i>
+          <span>Devices</span>
+        </button>
+
+        <button class="nav-link" data-page="Settings">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </button>
+
+        <button class="nav-link" data-page="Logs">
+          <i data-lucide="file-text"></i>
+          <span>Logs</span>
+        </button>
+      </nav>
+
+      <div class="server-status">
+        <span class="dot"></span>
+        <span>Online • Asia/Manila</span>
+        <i data-lucide="chevron-right"></i>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="top-header">
+        <div class="page-heading">
+          <h2 id="pageTitle">Dashboard</h2>
+          <p id="pageSubtitle">Attendance verification overview</p>
+        </div>
+
+        <button class="btn btn-outline" id="refreshButton">
+          <i data-lucide="refresh-cw"></i>
+          <span>Refresh</span>
+        </button>
+      </header>
+
+      <section class="filter-row">
+        <div class="period-tabs">
+          <button class="period-tab active" data-period="daily">
+            Daily
+          </button>
+
+          <button class="period-tab" data-period="weekly">
+            Weekly
+          </button>
+
+          <button class="period-tab" data-period="monthly">
+            Monthly
+          </button>
+
+          <button class="period-tab" data-period="first">
+            1–15
+          </button>
+
+          <button class="period-tab" data-period="second">
+            16–End
+          </button>
+        </div>
+
+        <label class="select-control">
+          <i data-lucide="calendar-days"></i>
+
+          <input id="dateFilter" type="date" aria-label="Attendance date" />
+        </label>
+
+        <label class="select-control branch-filter">
+          <i data-lucide="building-2"></i>
+
+          <select id="branchFilter">
+            <option>All Branches</option>
+            <option>Main Branch</option>
+            <option>Pampanga Branch</option>
+            <option>Cubao Branch</option>
+          </select>
+
+          <i class="select-arrow" data-lucide="chevron-down"></i>
+        </label>
+
+        <div class="verify-action">
+          <button class="btn btn-primary" id="verifyRecordsButton">
+            <i data-lucide="shield-check"></i>
+            <span>Verify Records</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        <article class="stat-card green">
+          <p class="stat-label">Present Today</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="present">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="user-round-check"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison up-green">↑ 12 vs yesterday</p>
+        </article>
+
+        <article class="stat-card orange">
+          <p class="stat-label">Late Today</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="late">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="clock-3"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison up-orange">↑ 3 vs yesterday</p>
+        </article>
+
+        <article class="stat-card red">
+          <p class="stat-label">Absent Today</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="absent">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="user-round-x"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison up-red">↑ 5 vs yesterday</p>
+        </article>
+
+        <article class="stat-card purple">
+          <p class="stat-label">On Leave</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="leave">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="plane"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison">— no change</p>
+        </article>
+
+        <article class="stat-card yellow">
+          <p class="stat-label">Pending Verification</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="pending">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="hourglass"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison up-orange">↑ 8 vs yesterday</p>
+        </article>
+
+        <article class="stat-card green">
+          <p class="stat-label">Verified Today</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="verified">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="shield-check"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison up-green">↑ 25 vs yesterday</p>
+        </article>
+
+        <article class="stat-card blue">
+          <p class="stat-label">Devices Online</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="online">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="wifi"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison">— no change</p>
+        </article>
+
+        <article class="stat-card red">
+          <p class="stat-label">Devices Offline</p>
+
+          <div class="stat-content">
+            <strong class="stat-value" data-stat="offline">0</strong>
+
+            <span class="stat-icon">
+              <i data-lucide="wifi-off"></i>
+            </span>
+          </div>
+
+          <p class="stat-comparison up-red">↑ 1 vs yesterday</p>
+        </article>
+      </section>
+
+      <section class="dashboard-row upper">
+        <article class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">
+              Attendance Trend
+              <span class="subtext" id="trendLabel">(This Week)</span>
+            </h3>
+
+          </div>
+
+          <div class="chart-area">
+            <canvas id="attendanceChart"></canvas>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">
+              Verification Queue
+              <span class="subtext">(Needs Review)</span>
+            </h3>
+
+            <button class="small-control open-modal" data-modal="queue">
+              View All
+            </button>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Employee</th><th>Issue</th><th>Time</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody>
+            </table>
+          </div>
+
+          <button class="table-footer open-modal" data-modal="queue" hidden>
+            View pending records
+            <span aria-hidden="true">&rarr;</span>
+          </button>
+        </article>
+      </section>
+
+      <section class="dashboard-row lower">
+        <article class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Recent Attendance Activity</h3>
+
+            <button class="small-control open-modal" data-modal="activity">
+              View All
+            </button>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Time</th><th>Employee</th><th>Branch</th><th>Activity</th><th>Status</th><th>Verification</th></tr></thead><tbody></tbody>
+            </table>
+          </div>
+
+          <button type="button" class="table-footer open-modal" data-modal="activity" aria-label="Open all attendance activity">
+            Showing latest 5 of 25 records
+            <i data-lucide="arrow-right"></i>
+          </button>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">
+              Cutoff Summary
+              <i data-lucide="info"></i>
+            </h3>
+          </div>
+
+          <div class="cutoff-body">
+            <div class="cutoff-box active">
+              <div class="cutoff-heading">
+                <h4>1 – 15 (Current Period)</h4>
+                <span class="period-chip progress">In Progress</span>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Paid Hours</span>
+                <strong>0 hrs</strong>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Late Records</span>
+                <strong>64</strong>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Absent Days</span>
+                <strong>28</strong>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Records Verified</span>
+                <strong class="highlight">412 / 568 (72%)</strong>
+              </div>
+            </div>
+
+            <div class="cutoff-box">
+              <div class="cutoff-heading">
+                <h4>16 – End of Month</h4>
+                <span class="period-chip upcoming">Upcoming</span>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Paid Hours</span>
+                <strong>—</strong>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Late Records</span>
+                <strong>—</strong>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Absent Days</span>
+                <strong>—</strong>
+              </div>
+
+              <div class="cutoff-detail">
+                <span>Records Verified</span>
+                <strong>—</strong>
+              </div>
+            </div>
+          </div>
+
+          <button class="table-footer open-modal" data-modal="cutoff">
+            View cutoff details
+            <i data-lucide="arrow-right"></i>
+          </button>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Exceptions &amp; Alerts</h3>
+          </div>
+
+          <div class="alerts-body">
+            <div class="alert-item">
+              <div class="alert-icon red">
+                <i data-lucide="circle-alert"></i>
+              </div>
+
+              <div class="alert-text">
+                <strong>Missing Time Out</strong>
+                <span>Employees without time out</span>
+              </div>
+
+              <span class="alert-number red">15</span>
+            </div>
+
+            <div class="alert-item">
+              <div class="alert-icon orange">
+                <i data-lucide="copy"></i>
+              </div>
+
+              <div class="alert-text">
+                <strong>Duplicate Logs</strong>
+                <span>Possible duplicate entries</span>
+              </div>
+
+              <span class="alert-number orange">3</span>
+            </div>
+
+            <div class="alert-item">
+              <div class="alert-icon blue">
+                <i data-lucide="info"></i>
+              </div>
+
+              <div class="alert-text">
+                <strong>Offline Device Sync</strong>
+                <span>Pending logs to sync</span>
+              </div>
+
+              <span class="alert-number blue">2</span>
+            </div>
+
+            <div class="alert-item">
+              <div class="alert-icon purple">
+                <i data-lucide="badge-help"></i>
+              </div>
+
+              <div class="alert-text">
+                <strong>Pending Approvals</strong>
+                <span>Overtime / undertime requests</span>
+              </div>
+
+              <span class="alert-number purple">12</span>
+            </div>
+          </div>
+
+          <button class="table-footer open-modal" data-modal="alerts">
+            View all alerts
+            <i data-lucide="arrow-right"></i>
+          </button>
+        </article>
+      </section>
+
+      <section class="quick-actions">
+        <h3>Quick Actions</h3>
+
+        <button class="quick-button" data-action="Time Card">
+          <i data-lucide="calendar-days"></i>
+          Open Time Card
+        </button>
+
+        <button class="quick-button" data-action="Export">
+          <i data-lucide="download"></i>
+          Export Summary
+        </button>
+
+        <button class="quick-button" data-action="Employee">
+          <i data-lucide="user-round-plus"></i>
+          Add Employee
+        </button>
+
+        <button class="quick-button" data-action="Devices">
+          <i data-lucide="wifi"></i>
+          Check Devices
+        </button>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">Record Details</h3>
+
+        <button class="modal-close" id="modalClose">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-content">
+        <p class="modal-message" id="modalMessage">
+          Record information will appear here.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="modalCancel">
+          Close
+        </button>
+
+        <button class="btn btn-primary" id="modalConfirm">
+          Continue
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">
+    <i data-lucide="circle-check"></i>
+    <span id="toastMessage">Dashboard updated.</span>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const dashboardData = {
+      daily: {
+        subtitle: "(This Week)",
+        labels: [
+          ["Sun", "5/17"],
+          ["Mon", "5/18"],
+          ["Tue", "5/19"],
+          ["Wed", "5/20"],
+          ["Thu", "5/21"],
+          ["Fri", "5/22"],
+          ["Sat", "5/23"]
+        ],
+        present: [98, 145, 152, 148, 160, 156, 0],
+        late: [38, 52, 33, 59, 40, 53, 0],
+        absent: [10, 21, 8, 25, 11, 22, 0],
+        stats: {
+          present: 156,
+          late: 18,
+          absent: 22,
+          leave: 14,
+          pending: 37,
+          verified: 98,
+          online: 12,
+          offline: 2
+        }
+      },
+
+      weekly: {
+        subtitle: "(Weekly Overview)",
+        labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
+        present: [706, 741, 758, 789],
+        late: [81, 73, 89, 68],
+        absent: [46, 51, 40, 41],
+        stats: {
+          present: 789,
+          late: 68,
+          absent: 41,
+          leave: 33,
+          pending: 82,
+          verified: 642,
+          online: 12,
+          offline: 2
+        }
+      },
+
+      monthly: {
+        subtitle: "(Monthly Overview)",
+        labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+        present: [2980, 3062, 3124, 3208, 3318, 3255],
+        late: [312, 281, 267, 292, 244, 231],
+        absent: [151, 134, 142, 118, 123, 110],
+        stats: {
+          present: 3318,
+          late: 244,
+          absent: 123,
+          leave: 84,
+          pending: 106,
+          verified: 3012,
+          online: 12,
+          offline: 2
+        }
+      },
+
+      first: {
+        subtitle: "(Cutoff 1–15)",
+        labels: ["1–3", "4–6", "7–9", "10–12", "13–15"],
+        present: [442, 458, 470, 465, 476],
+        late: [42, 37, 31, 45, 29],
+        absent: [21, 18, 24, 17, 19],
+        stats: {
+          present: 2311,
+          late: 184,
+          absent: 99,
+          leave: 47,
+          pending: 76,
+          verified: 1874,
+          online: 12,
+          offline: 2
+        }
+      },
+
+      second: {
+        subtitle: "(Cutoff 16–End)",
+        labels: ["16–18", "19–21", "22–24", "25–27", "28–End"],
+        present: [454, 461, 468, 472, 480],
+        late: [34, 29, 42, 31, 27],
+        absent: [17, 22, 19, 16, 20],
+        stats: {
+          present: 2335,
+          late: 163,
+          absent: 94,
+          leave: 39,
+          pending: 58,
+          verified: 2014,
+          online: 12,
+          offline: 2
+        }
+      }
+    };
+
+    /* The standalone layout originally shipped with demo chart/stat values.
+       Neutralize them before Chart.js renders; live values come from the server adapter. */
+    Object.values(dashboardData).forEach((period) => {
+      period.present = period.present.map(() => 0);
+      period.late = period.late.map(() => 0);
+      period.absent = period.absent.map(() => 0);
+      Object.keys(period.stats).forEach((key) => { period.stats[key] = 0; });
+    });
+
+    const chartContext = document
+      .getElementById("attendanceChart")
+      .getContext("2d");
+
+    const barLabelPlugin = {
+      id: "barLabelPlugin",
+
+      afterDatasetsDraw(chart) {
+        const datasetIndex = 0;
+        const meta = chart.getDatasetMeta(datasetIndex);
+        const values = chart.data.datasets[datasetIndex].data;
+        const context = chart.ctx;
+
+        context.save();
+        context.fillStyle = "#07866f";
+        context.font = "700 9px Inter";
+        context.textAlign = "center";
+
+        meta.data.forEach((element, index) => {
+          const value = values[index];
+
+          if (value > 0) {
+            context.fillText(value, element.x, element.y - 7);
+          }
+        });
+
+        context.restore();
+      }
+    };
+
+    const attendanceChart = new Chart(chartContext, {
+      data: {
+        labels: dashboardData.daily.labels,
+
+        datasets: [
+          {
+            type: "bar",
+            label: "Present",
+            data: dashboardData.daily.present,
+            backgroundColor: "rgba(16, 153, 118, 0.80)",
+            borderColor: "#0f9975",
+            borderWidth: 1,
+            borderRadius: 2,
+            barThickness: 22,
+            order: 3
+          },
+
+          {
+            type: "line",
+            label: "Late",
+            data: dashboardData.daily.late,
+            borderColor: "#ef8500",
+            backgroundColor: "#ef8500",
+            borderWidth: 2.2,
+            pointRadius: 4,
+            pointHoverRadius: 5,
+            pointBackgroundColor: "#ffffff",
+            pointBorderColor: "#ef8500",
+            pointBorderWidth: 2,
+            tension: 0.28,
+            order: 1
+          },
+
+          {
+            type: "line",
+            label: "Absent",
+            data: dashboardData.daily.absent,
+            borderColor: "#ec2737",
+            backgroundColor: "#ec2737",
+            borderWidth: 2.2,
+            pointRadius: 4,
+            pointHoverRadius: 5,
+            pointBackgroundColor: "#ffffff",
+            pointBorderColor: "#ec2737",
+            pointBorderWidth: 2,
+            tension: 0.28,
+            order: 2
+          }
+        ]
+      },
+
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+
+        interaction: {
+          intersect: false,
+          mode: "index"
+        },
+
+        animation: {
+          duration: 450
+        },
+
+        plugins: {
+          legend: {
+            position: "bottom",
+
+            labels: {
+              usePointStyle: true,
+              pointStyle: "rectRounded",
+              padding: 18,
+              boxWidth: 8,
+              boxHeight: 8,
+              color: "#42516b",
+
+              font: {
+                family: "Inter",
+                size: 9,
+                weight: "600"
+              }
+            }
+          },
+
+          tooltip: {
+            padding: 10,
+            cornerRadius: 7,
+            backgroundColor: "#12213d",
+            titleColor: "#ffffff",
+            bodyColor: "#ffffff",
+
+            titleFont: {
+              family: "Inter",
+              size: 10,
+              weight: "700"
+            },
+
+            bodyFont: {
+              family: "Inter",
+              size: 9
+            }
+          }
+        },
+
+        scales: {
+          x: {
+            grid: {
+              display: false
+            },
+
+            border: {
+              display: false
+            },
+
+            ticks: {
+              color: "#647189",
+
+              font: {
+                family: "Inter",
+                size: 8,
+                weight: "600"
+              }
+            }
+          },
+
+          y: {
+            beginAtZero: true,
+            suggestedMax: 200,
+
+            grid: {
+              color: "#e5eaf1",
+              drawTicks: false
+            },
+
+            border: {
+              display: false
+            },
+
+            ticks: {
+              padding: 7,
+              color: "#647189",
+
+              font: {
+                family: "Inter",
+                size: 8
+              }
+            }
+          }
+        }
+      },
+
+      plugins: [barLabelPlugin]
+    });
+
+    const pageSubtitles = {
+      Dashboard: "Attendance verification overview",
+      "Time Card": "Employee daily time records",
+      Enrollment: "Register employee fingerprint and identity",
+      Employees: "Manage employee information",
+      Devices: "Manage attendance terminal devices",
+      Settings: "Configure attendance server settings",
+      Logs: "Review attendance system activity"
+    };
+
+    const modalContent = {
+      queue: {
+        title: "Verification Queue",
+        message:
+          "This section displays all attendance records that require admin review, correction, or final verification."
+      },
+
+      activity: {
+        title: "Attendance Activity",
+        message:
+          "This section displays the complete attendance activity including check-in, check-out, late, undertime, leave, and overtime records."
+      },
+
+      cutoff: {
+        title: "Cutoff Details",
+        message:
+          "View complete payroll cutoff data for the 1–15 and 16–end of month periods, including paid hours, late records, absences, and verification progress."
+      },
+
+      alerts: {
+        title: "Exceptions and Alerts",
+        message:
+          "Review missing time-outs, duplicate attendance logs, offline device synchronization, and pending overtime or undertime approvals."
+      }
+    };
+
+    const modalBackdrop = document.getElementById("modalBackdrop");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalMessage = document.getElementById("modalMessage");
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toastMessage");
+
+    let toastTimer;
+
+    function showToast(message) {
+      toastMessage.textContent = message;
+      toast.classList.add("show");
+
+      clearTimeout(toastTimer);
+
+      toastTimer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2200);
+    }
+
+    function openModal(title, message) {
+      modalTitle.textContent = title;
+      modalMessage.textContent = message;
+      modalBackdrop.classList.add("show");
+    }
+
+    function closeModal() {
+      modalBackdrop.classList.remove("show");
+    }
+
+    function updateDashboard(period) {
+      const selectedData = dashboardData[period];
+
+      attendanceChart.data.labels = selectedData.labels;
+      attendanceChart.data.datasets[0].data = selectedData.present;
+      attendanceChart.data.datasets[1].data = selectedData.late;
+      attendanceChart.data.datasets[2].data = selectedData.absent;
+
+      const highestValue = Math.max(...selectedData.present);
+
+      attendanceChart.options.scales.y.suggestedMax =
+        highestValue <= 200
+          ? 200
+          : Math.ceil(highestValue / 500) * 500;
+
+      attendanceChart.update();
+
+      document.getElementById("trendLabel").textContent =
+        selectedData.subtitle;
+
+      Object.entries(selectedData.stats).forEach(([key, value]) => {
+        const element = document.querySelector(
+          `[data-stat="${key}"]`
+        );
+
+        if (element) {
+          element.textContent = Number(value).toLocaleString();
+        }
+      });
+    }
+
+    document.querySelectorAll(".period-tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".period-tab").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+
+        button.classList.add("active");
+
+        const period = button.dataset.period;
+        updateDashboard(period);
+
+        showToast(`${button.textContent.trim()} view selected.`);
+      });
+    });
+
+    document.querySelectorAll(".nav-link").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".nav-link").forEach((link) => {
+          link.classList.remove("active");
+        });
+
+        button.classList.add("active");
+
+        const pageName = button.dataset.page;
+
+        document.getElementById("pageTitle").textContent = pageName;
+        document.getElementById("pageSubtitle").textContent =
+          pageSubtitles[pageName];
+
+        showToast(`${pageName} selected.`);
+      });
+    });
+
+    document
+      .getElementById("refreshButton")
+      .addEventListener("click", () => {
+        const button = document.getElementById("refreshButton");
+        const icon = button.querySelector("svg");
+
+        button.disabled = true;
+        button.style.opacity = "0.7";
+
+        if (icon) {
+          icon.style.transition = "transform 0.6s ease";
+          icon.style.transform = "rotate(360deg)";
+        }
+
+        setTimeout(() => {
+          button.disabled = false;
+          button.style.opacity = "1";
+
+          if (icon) {
+            icon.style.transform = "rotate(0deg)";
+          }
+
+          showToast("Dashboard refreshed successfully.");
+        }, 650);
+      });
+
+    document
+      .getElementById("verifyRecordsButton")
+      .addEventListener("click", () => {
+        openModal(
+          "Verify Attendance Records",
+          "Review the 37 pending attendance records before confirming them. Records with missing time-out or duplicate logs should be corrected first."
+        );
+      });
+
+    document.querySelectorAll(".review-record").forEach((button) => {
+      button.addEventListener("click", () => {
+        const employee = button.dataset.employee;
+
+        openModal(
+          `Review: ${employee}`,
+          `Review the attendance record of ${employee}. You may approve, correct, or reject the attendance entry based on the employee schedule and device logs.`
+        );
+      });
+    });
+
+    document.querySelectorAll(".open-modal").forEach((button) => {
+      button.addEventListener("click", () => {
+        const type = button.dataset.modal;
+        const content = modalContent[type];
+
+        openModal(content.title, content.message);
+      });
+    });
+
+    document.querySelectorAll(".quick-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.action;
+
+        if (action === "Export") {
+          showToast("Attendance summary exported.");
+          return;
+        }
+
+        openModal(
+          action,
+          `${action} module selected. Connect this button to your backend route or application page.`
+        );
+      });
+    });
+
+    document
+      .getElementById("branchFilter")
+      .addEventListener("change", (event) => {
+        showToast(`Showing records for ${event.target.value}.`);
+      });
+
+    document
+      .getElementById("dateFilter")
+      .addEventListener("change", (event) => {
+        const selectedDate = new Date(`${event.target.value}T12:00:00`);
+        const selectedText = selectedDate.toLocaleDateString(undefined, {
+          weekday: "long", month: "long", day: "numeric", year: "numeric"
+        });
+
+        showToast(`Attendance date changed to ${selectedText}.`);
+      });
+
+    document
+      .getElementById("trendFilter")
+      ?.addEventListener("change", (event) => {
+        const selectedValue = event.target.value;
+
+        if (selectedValue === "daily") {
+          updateDashboard("daily");
+        }
+
+        if (selectedValue === "previous") {
+          attendanceChart.data.labels = [
+            ["Sun", "5/10"],
+            ["Mon", "5/11"],
+            ["Tue", "5/12"],
+            ["Wed", "5/13"],
+            ["Thu", "5/14"],
+            ["Fri", "5/15"],
+            ["Sat", "5/16"]
+          ];
+
+          attendanceChart.data.datasets[0].data = [
+            91, 137, 146, 142, 151, 149, 0
+          ];
+
+          attendanceChart.data.datasets[1].data = [
+            35, 47, 31, 52, 38, 49, 0
+          ];
+
+          attendanceChart.data.datasets[2].data = [
+            13, 18, 11, 23, 14, 20, 0
+          ];
+
+          attendanceChart.options.scales.y.suggestedMax = 200;
+          attendanceChart.update();
+
+          document.getElementById("trendLabel").textContent =
+            "(Last Week)";
+        }
+
+        if (selectedValue === "monthly") {
+          updateDashboard("monthly");
+        }
+
+        showToast(
+          `Attendance trend changed to ${
+            event.target.options[event.target.selectedIndex].text
+          }.`
+        );
+      });
+
+    document
+      .getElementById("modalClose")
+      .addEventListener("click", closeModal);
+
+    document
+      .getElementById("modalCancel")
+      .addEventListener("click", closeModal);
+
+    document
+      .getElementById("modalConfirm")
+      .addEventListener("click", () => {
+        closeModal();
+        showToast("Action completed.");
+      });
+
+    modalBackdrop.addEventListener("click", (event) => {
+      if (event.target === modalBackdrop) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeModal();
+      }
+    });
+  </script>
+  <script src="/functional-pages.js?v=20260713-70"></script>
+</body>
+</html>

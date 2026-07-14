@@ -1,0 +1,2138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>GMS Attendance Server - Logs</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --background: #f7f8fc;
+      --surface: #ffffff;
+      --surface-soft: #fafbfe;
+
+      --navy: #101a37;
+      --text: #34425f;
+      --muted: #71809b;
+
+      --border: #dfe5ef;
+      --border-soft: #e9edf4;
+
+      --purple: #4c2ce5;
+      --purple-dark: #3d21c8;
+      --purple-soft: #f0edff;
+
+      --green: #0d9860;
+      --green-dark: #08794c;
+      --green-soft: #e7f8ef;
+
+      --blue: #1678df;
+      --blue-soft: #eaf4ff;
+
+      --orange: #f49a12;
+      --orange-soft: #fff3df;
+
+      --red: #f13a58;
+      --red-soft: #ffedf1;
+
+      --shadow:
+        0 1px 2px rgba(15, 23, 42, 0.03),
+        0 6px 20px rgba(15, 23, 42, 0.045);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: "Inter", sans-serif;
+      color: var(--text);
+      background: var(--background);
+      overflow-x: hidden;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+    }
+
+    /* SIDEBAR */
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 220px;
+      background: #ffffff;
+      border-right: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .brand {
+      height: 70px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+    }
+
+    .brand-logo {
+      width: 58px;
+      height: 70px;
+      flex: 0 0 58px;
+      border-radius: 0 0 8px 0;
+      color: #ffffff;
+      background: linear-gradient(145deg, #5c38f0, #4120ce);
+      display: grid;
+      place-items: center;
+    }
+
+    .brand-logo svg {
+      width: 25px;
+      height: 25px;
+      stroke-width: 2;
+    }
+
+    .brand-info {
+      padding-left: 14px;
+    }
+
+    .brand-info h1 {
+      color: var(--purple);
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .brand-info p {
+      margin-top: 6px;
+      color: #4e5c78;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .navigation {
+      padding: 20px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-item {
+      width: 100%;
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: #354464;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+      transition: 0.18s ease;
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      color: var(--purple);
+      flex: 0 0 auto;
+    }
+
+    .nav-item:hover {
+      color: var(--purple-dark);
+      background: #f7f5ff;
+    }
+
+    .nav-item.active {
+      color: var(--purple);
+      background: linear-gradient(90deg, #f0edff, #f5f3ff);
+      border-color: #ece8ff;
+    }
+
+    .sidebar-status {
+      min-height: 52px;
+      margin: auto 11px 17px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: var(--shadow);
+    }
+
+    .online-dot {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 10px;
+      border-radius: 50%;
+      background: #16a063;
+      box-shadow: 0 0 0 3px rgba(22, 160, 99, 0.08);
+    }
+
+    .sidebar-status-text {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .sidebar-status-text strong {
+      display: block;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .sidebar-status-text span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 8px;
+    }
+
+    .sidebar-status svg {
+      width: 15px;
+      height: 15px;
+      color: #586783;
+    }
+
+    /* WORKSPACE */
+
+    .workspace {
+      grid-column: 2;
+      min-width: 0;
+    }
+
+    .topbar {
+      height: 70px;
+      padding: 0 27px;
+      border-bottom: 1px solid var(--border-soft);
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 34px;
+    }
+
+    .top-icon {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      background: transparent;
+      color: #63708c;
+      display: grid;
+      place-items: center;
+    }
+
+    .top-icon.menu {
+      color: var(--purple);
+    }
+
+    .top-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .notification-count {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 17px;
+      height: 17px;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      color: #ffffff;
+      background: #f55a73;
+      display: grid;
+      place-items: center;
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .user-menu {
+      min-width: 184px;
+      padding-left: 15px;
+      border-left: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .admin-avatar {
+      width: 39px;
+      height: 39px;
+      flex: 0 0 39px;
+      border: 2px solid #f0f2f7;
+      border-radius: 50%;
+      overflow: hidden;
+      background: #e9edf5;
+    }
+
+    .admin-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .admin-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .admin-info strong {
+      display: block;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .admin-info span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    .user-menu svg {
+      width: 14px;
+      height: 14px;
+      color: #687790;
+    }
+
+    /* MAIN */
+
+    .main {
+      min-width: 0;
+      padding: 22px 23px 18px;
+    }
+
+    .page-header {
+      margin-bottom: 17px;
+      padding: 0 2px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .page-heading h2 {
+      color: var(--navy);
+      font-size: 23px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .page-heading p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .export-wrap {
+      display: flex;
+      align-items: center;
+    }
+
+    .export-button {
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 7px 0 0 7px;
+      background: #ffffff;
+      color: var(--navy);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 9px;
+      font-weight: 700;
+      box-shadow: var(--shadow);
+    }
+
+    .export-button:hover,
+    .export-arrow:hover {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .export-button svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .export-arrow {
+      width: 42px;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-left: 0;
+      border-radius: 0 7px 7px 0;
+      background: #ffffff;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+      box-shadow: var(--shadow);
+    }
+
+    .export-arrow svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    /* SUMMARY CARDS */
+
+    .summary-grid {
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(175px, 1fr));
+      gap: 13px;
+    }
+
+    .summary-card {
+      min-height: 104px;
+      padding: 15px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .summary-icon {
+      width: 49px;
+      height: 49px;
+      flex: 0 0 49px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+    }
+
+    .summary-icon svg {
+      width: 22px;
+      height: 22px;
+      stroke-width: 2;
+    }
+
+    .summary-icon.purple {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .summary-icon.green {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .summary-icon.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .summary-icon.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+    }
+
+    .summary-icon.red {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .summary-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .summary-info h3 {
+      color: #5a6883;
+      font-size: 10px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .summary-info strong {
+      display: block;
+      margin-top: 9px;
+      color: var(--navy);
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .summary-info p {
+      margin-top: 9px;
+      color: #67748d;
+      font-size: 8px;
+      font-weight: 500;
+    }
+
+    .summary-info p.green {
+      color: var(--green);
+      font-weight: 650;
+    }
+
+    .summary-info p.blue {
+      color: var(--blue);
+      font-weight: 650;
+    }
+
+    .summary-info p.orange {
+      color: var(--orange);
+      font-weight: 650;
+    }
+
+    .summary-info p.red {
+      color: var(--red);
+      font-weight: 650;
+    }
+
+    /* FILTER PANEL */
+
+    .filter-panel {
+      min-height: 88px;
+      margin-bottom: 16px;
+      padding: 17px 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      display: grid;
+      grid-template-columns:
+        minmax(235px, 1.15fr)
+        minmax(180px, 0.85fr)
+        minmax(180px, 0.85fr)
+        minmax(180px, 0.85fr)
+        minmax(185px, 0.9fr)
+        auto
+        auto;
+      gap: 15px;
+      align-items: end;
+      box-shadow: var(--shadow);
+    }
+
+    .filter-group {
+      min-width: 0;
+    }
+
+    .filter-group label {
+      display: block;
+      margin-bottom: 7px;
+      color: #56637c;
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .search-control,
+    .select-control,
+    .date-control {
+      position: relative;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-control input,
+    .date-control input {
+      width: 100%;
+      min-height: 36px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--navy);
+      font-size: 9px;
+    }
+
+    .search-control input {
+      padding: 0 38px 0 11px;
+    }
+
+    .search-control input::placeholder {
+      color: #9aa5b7;
+    }
+
+    .search-control svg {
+      position: absolute;
+      right: 11px;
+      width: 14px;
+      height: 14px;
+      color: #61708b;
+    }
+
+    .select-control select {
+      width: 100%;
+      min-height: 36px;
+      padding: 0 32px 0 11px;
+      border: 0;
+      outline: 0;
+      appearance: none;
+      background: transparent;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .select-control svg {
+      position: absolute;
+      right: 10px;
+      width: 13px;
+      height: 13px;
+      color: #52617d;
+      pointer-events: none;
+    }
+
+    .date-control input {
+      padding: 0 11px 0 35px;
+      cursor: pointer;
+    }
+
+    .date-control svg {
+      position: absolute;
+      left: 10px;
+      width: 14px;
+      height: 14px;
+      color: #5f6e89;
+    }
+
+    .filter-button,
+    .refresh-button {
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--navy);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .filter-button {
+      padding: 0 15px;
+    }
+
+    .refresh-button {
+      width: 40px;
+      padding: 0;
+    }
+
+    .filter-button:hover,
+    .refresh-button:hover {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .filter-button svg,
+    .refresh-button svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* LOG TABLE */
+
+    .table-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    .logs-table {
+      width: 100%;
+      min-width: 1150px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .logs-table thead {
+      background: #fbfcfe;
+    }
+
+    .logs-table th {
+      height: 49px;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #68758d;
+      text-align: left;
+      font-size: 8px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .logs-table td {
+      height: 52px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #263551;
+      font-size: 8.5px;
+      font-weight: 500;
+      vertical-align: middle;
+    }
+
+    .logs-table tbody tr {
+      transition: background 0.15s ease;
+    }
+
+    .logs-table tbody tr:hover {
+      background: #fafbfe;
+    }
+
+    .log-number {
+      color: var(--navy);
+      font-weight: 700;
+    }
+
+    .log-time {
+      color: var(--navy);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .log-type {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--navy);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .log-type svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .log-type.green svg {
+      color: var(--green);
+    }
+
+    .log-type.red svg {
+      color: var(--red);
+    }
+
+    .log-type.orange svg {
+      color: var(--orange);
+    }
+
+    .log-type.blue svg {
+      color: var(--blue);
+    }
+
+    .log-type.purple svg {
+      color: var(--purple);
+    }
+
+    .description,
+    .device-name,
+    .log-user,
+    .ip-address {
+      color: var(--navy);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status-badge {
+      min-height: 23px;
+      padding: 0 8px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7.5px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-badge.success {
+      color: var(--green-dark);
+      background: var(--green-soft);
+      border: 1px solid #d6eee3;
+    }
+
+    .status-badge.warning {
+      color: #ce7800;
+      background: var(--orange-soft);
+      border: 1px solid #ffe1b3;
+    }
+
+    .status-badge.error {
+      color: var(--red);
+      background: var(--red-soft);
+      border: 1px solid #ffd5dc;
+    }
+
+    .action-button {
+      width: 31px;
+      height: 31px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .action-button:hover {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .action-button svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* TABLE FOOTER */
+
+    .table-footer {
+      min-height: 64px;
+      padding: 0 17px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .entries-info {
+      color: #687793;
+      font-size: 8px;
+      font-weight: 500;
+    }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .page-button {
+      min-width: 35px;
+      height: 35px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .page-button:hover {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .page-button.active {
+      color: #ffffff;
+      background: linear-gradient(180deg, #5634e9, #4021c8);
+      border-color: var(--purple-dark);
+      box-shadow: 0 5px 12px rgba(77, 43, 231, 0.18);
+    }
+
+    .page-button svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* ACTION MENU */
+
+    .action-popup {
+      position: fixed;
+      z-index: 400;
+      width: 158px;
+      padding: 5px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 16px 38px rgba(15, 23, 42, 0.16);
+      display: none;
+    }
+
+    .action-popup.show {
+      display: block;
+    }
+
+    .popup-action {
+      width: 100%;
+      min-height: 33px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-align: left;
+      font-size: 8px;
+      font-weight: 600;
+    }
+
+    .popup-action:hover {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .popup-action svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    /* MODAL */
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      padding: 20px;
+      background: rgba(14, 22, 44, 0.48);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal {
+      width: min(560px, 100%);
+      border-radius: 12px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 25px 75px rgba(15, 23, 42, 0.28);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-header {
+      min-height: 58px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h3 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 7px;
+      background: #f1f3f8;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .modal-close svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .modal-body {
+      padding: 18px;
+    }
+
+    .details-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .detail-item {
+      min-height: 60px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      background: #fafbfe;
+    }
+
+    .detail-item.full {
+      grid-column: 1 / -1;
+    }
+
+    .detail-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 8px;
+    }
+
+    .detail-item strong {
+      display: block;
+      margin-top: 7px;
+      color: var(--navy);
+      font-size: 9px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .modal-footer {
+      padding: 13px 18px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .modal-button {
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 7px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .modal-button.cancel {
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--navy);
+    }
+
+    .modal-button.primary {
+      border: 0;
+      background: linear-gradient(180deg, #5736eb, #4222ce);
+      color: #ffffff;
+    }
+
+    /* TOAST */
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 1000;
+      min-width: 245px;
+      min-height: 47px;
+      padding: 0 14px;
+      border-radius: 8px;
+      background: #111c38;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 10px;
+      font-weight: 700;
+      box-shadow: 0 17px 42px rgba(15, 23, 42, 0.28);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(20px);
+      transition:
+        opacity 0.25s ease,
+        transform 0.25s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast svg {
+      width: 17px;
+      height: 17px;
+      color: #4ade80;
+    }
+
+    /* RESPONSIVE */
+
+    @media (max-width: 1350px) {
+      .summary-grid {
+        grid-template-columns: repeat(3, minmax(180px, 1fr));
+      }
+
+      .filter-panel {
+        grid-template-columns: repeat(3, minmax(180px, 1fr));
+      }
+
+      .filter-button,
+      .refresh-button {
+        justify-self: stretch;
+      }
+
+      .refresh-button {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 950px) {
+      .app {
+        grid-template-columns: 76px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        width: 76px;
+      }
+
+      .brand-logo {
+        width: 76px;
+      }
+
+      .brand-info,
+      .nav-item span,
+      .sidebar-status-text,
+      .sidebar-status svg {
+        display: none;
+      }
+
+      .navigation {
+        padding-inline: 10px;
+      }
+
+      .nav-item {
+        padding: 0;
+        justify-content: center;
+      }
+
+      .sidebar-status {
+        padding: 0;
+        justify-content: center;
+      }
+
+      .workspace {
+        grid-column: 2;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }
+
+      .filter-panel {
+        grid-template-columns: repeat(2, minmax(170px, 1fr));
+      }
+    }
+
+    @media (max-width: 650px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar {
+        position: static;
+        width: 100%;
+      }
+
+      .brand {
+        height: 64px;
+      }
+
+      .brand-logo {
+        width: 58px;
+        height: 64px;
+      }
+
+      .brand-info {
+        display: block;
+      }
+
+      .navigation {
+        padding: 10px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .nav-item {
+        width: 100%;
+      }
+
+      .sidebar-status {
+        display: none;
+      }
+
+      .topbar {
+        padding: 0 14px;
+      }
+
+      .topbar-left {
+        gap: 18px;
+      }
+
+      .user-menu {
+        min-width: auto;
+      }
+
+      .admin-info {
+        display: none;
+      }
+
+      .main {
+        padding: 17px 10px;
+      }
+
+      .page-heading h2 {
+        font-size: 21px;
+      }
+
+      .summary-grid,
+      .filter-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .table-footer {
+        padding-block: 13px;
+        flex-direction: column;
+      }
+
+      .details-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .detail-item.full {
+        grid-column: auto;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/standalone-shared.css?v=20260713-72" />
+</head>
+
+<body class="live-page-entering">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <i data-lucide="users-round"></i>
+        </div>
+
+        <div class="brand-info">
+          <h1>GMS</h1>
+          <p>Attendance Server</p>
+        </div>
+      </div>
+
+      <nav class="navigation">
+        <button class="nav-item" data-page="Dashboard">
+          <i data-lucide="house"></i>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-item" data-page="Time Card">
+          <i data-lucide="calendar-days"></i>
+          <span>Time Card</span>
+        </button>
+
+        <button class="nav-item" data-page="Enrollment">
+          <i data-lucide="fingerprint"></i>
+          <span>Enrollment</span>
+        </button>
+
+        <button class="nav-item" data-page="Employees">
+          <i data-lucide="users-round"></i>
+          <span>Employees</span>
+        </button>
+
+        <button class="nav-item" data-page="Devices">
+          <i data-lucide="monitor-smartphone"></i>
+          <span>Devices</span>
+        </button>
+
+        <button class="nav-item" data-page="Settings">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </button>
+
+        <button class="nav-item active" data-page="Logs">
+          <i data-lucide="notebook-tabs"></i>
+          <span>Logs</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-status">
+        <span class="online-dot"></span>
+
+        <div class="sidebar-status-text">
+          <strong>Online</strong>
+          <span>Asia/Manila</span>
+        </div>
+
+        <i data-lucide="chevron-right"></i>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="top-icon menu" title="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+
+          <button class="top-icon" title="Messages">
+            <i data-lucide="mail"></i>
+          </button>
+
+          <button class="top-icon" title="Notifications">
+            <i data-lucide="bell"></i>
+            <span class="notification-count">3</span>
+          </button>
+
+          <button class="top-icon" title="Calendar">
+            <i data-lucide="calendar-days"></i>
+          </button>
+
+          <button class="top-icon" title="Help">
+            <i data-lucide="circle-help"></i>
+          </button>
+        </div>
+
+        <div class="user-menu">
+          <div class="admin-avatar">
+            <img
+              src="/images/gwd-logo.jpg"
+              alt="GWD logo"
+            />
+          </div>
+
+          <div class="admin-info">
+            <strong>GWD Administrator</strong>
+            <span>Main Branch</span>
+          </div>
+
+          <i data-lucide="chevron-down"></i>
+        </div>
+      </header>
+
+      <main class="main">
+        <header class="page-header">
+          <div class="page-heading">
+            <h2>Logs</h2>
+            <p>View system activities and attendance events</p>
+          </div>
+
+          <div class="export-wrap">
+            <button class="export-button" id="exportLogsButton">
+              <i data-lucide="download"></i>
+              Export Logs
+            </button>
+
+            <button class="export-arrow" id="exportArrowButton">
+              <i data-lucide="chevron-down"></i>
+            </button>
+          </div>
+        </header>
+
+        <section class="summary-grid">
+          <article class="summary-card">
+            <div class="summary-icon purple">
+              <i data-lucide="notebook-tabs"></i>
+            </div>
+
+            <div class="summary-info">
+              <h3>Total Logs</h3>
+              <strong>0</strong>
+              <p>All activities</p>
+            </div>
+          </article>
+
+          <article class="summary-card">
+            <div class="summary-icon green">
+              <i data-lucide="clipboard-list"></i>
+            </div>
+
+            <div class="summary-info">
+              <h3>Today's Logs</h3>
+              <strong>0</strong>
+              <p class="green"></p>
+            </div>
+          </article>
+
+          <article class="summary-card">
+            <div class="summary-icon blue">
+              <i data-lucide="badge-check"></i>
+            </div>
+
+            <div class="summary-info">
+              <h3>Successful</h3>
+              <strong>0</strong>
+              <p class="blue">0%</p>
+            </div>
+          </article>
+
+          <article class="summary-card">
+            <div class="summary-icon orange">
+              <i data-lucide="triangle-alert"></i>
+            </div>
+
+            <div class="summary-info">
+              <h3>Warnings</h3>
+              <strong>0</strong>
+              <p class="orange">0%</p>
+            </div>
+          </article>
+
+          <article class="summary-card">
+            <div class="summary-icon red">
+              <i data-lucide="badge-alert"></i>
+            </div>
+
+            <div class="summary-info">
+              <h3>Errors</h3>
+              <strong>464</strong>
+              <p class="red">0%</p>
+            </div>
+          </article>
+        </section>
+
+        <section class="filter-panel">
+          <div class="filter-group">
+            <label>&nbsp;</label>
+
+            <div class="search-control">
+              <input
+                id="logSearch"
+                type="search"
+                placeholder="Search by keyword..."
+              />
+
+              <i data-lucide="search"></i>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label>Log Type</label>
+
+            <div class="select-control">
+              <select id="typeFilter">
+                <option value="all">All Types</option>
+                <option value="Time In">Time In</option>
+                <option value="Device Offline">Device Offline</option>
+                <option value="Sync">Sync</option>
+                <option value="Verification Failed">
+                  Verification Failed
+                </option>
+                <option value="User Login">User Login</option>
+                <option value="Settings Update">
+                  Settings Update
+                </option>
+              </select>
+
+              <i data-lucide="chevron-down"></i>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label>Status</label>
+
+            <div class="select-control">
+              <select id="statusFilter">
+                <option value="all">All Statuses</option>
+                <option value="Success">Success</option>
+                <option value="Warning">Warning</option>
+                <option value="Error">Error</option>
+              </select>
+
+              <i data-lucide="chevron-down"></i>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label>Device</label>
+
+            <div class="select-control">
+              <select id="deviceFilter">
+                <option value="all">All Devices</option>
+              </select>
+
+              <i data-lucide="chevron-down"></i>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label>Date Range</label>
+
+            <div class="date-control">
+              <i data-lucide="calendar-days"></i>
+
+              <input
+                id="dateFilter"
+                type="text"
+                value=""
+                readonly
+              />
+            </div>
+          </div>
+
+          <button class="filter-button" id="filterButton">
+            <i data-lucide="list-filter"></i>
+            Filter
+          </button>
+
+          <button class="refresh-button" id="refreshLogsButton">
+            <i data-lucide="refresh-cw"></i>
+          </button>
+        </section>
+
+        <section class="table-panel">
+          <div class="table-container">
+            <table class="logs-table">
+              <thead><tr><th>#</th><th>Time</th><th>Log Type</th><th>Description</th><th>Device</th><th>User</th><th>IP Address</th><th>Status</th><th>Action</th></tr></thead><tbody id="logsTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="table-footer">
+            <span class="entries-info" id="entriesInfo">
+              Showing 0 logs
+            </span>
+
+            <div class="pagination">
+              <button class="page-button" id="firstPage">
+                <i data-lucide="chevrons-left"></i>
+              </button>
+
+              <button class="page-button" id="previousPage">
+                <i data-lucide="chevron-left"></i>
+              </button>
+
+              <button class="page-button active" data-page="1">1</button>
+              <button class="page-button" data-page="2">2</button>
+              <button class="page-button" data-page="3">3</button>
+              <button class="page-button" disabled>...</button>
+              <button class="page-button" data-page="1246">1,246</button>
+
+              <button class="page-button" id="nextPage">
+                <i data-lucide="chevron-right"></i>
+              </button>
+
+              <button class="page-button" id="lastPage">
+                <i data-lucide="chevrons-right"></i>
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <div class="action-popup" id="actionPopup">
+    <button class="popup-action" data-action="view">
+      <i data-lucide="eye"></i>
+      View Details
+    </button>
+
+    <button class="popup-action" data-action="copy">
+      <i data-lucide="copy"></i>
+      Copy Log
+    </button>
+
+    <button class="popup-action" data-action="export">
+      <i data-lucide="download"></i>
+      Export Log
+    </button>
+  </div>
+
+  <div class="modal-backdrop" id="detailsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Log Details</h3>
+
+        <button class="modal-close" id="closeDetailsModal">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="details-grid">
+          <div class="detail-item">
+            <span>Log Number</span>
+            <strong id="detailId">—</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Status</span>
+            <strong id="detailStatus">—</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Time</span>
+            <strong id="detailTime">—</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Log Type</span>
+            <strong id="detailType">—</strong>
+          </div>
+
+          <div class="detail-item full">
+            <span>Description</span>
+            <strong id="detailDescription">—</strong>
+          </div>
+
+          <div class="detail-item full">
+            <span>Device</span>
+            <strong id="detailDevice">—</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>User</span>
+            <strong id="detailUser">—</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>IP Address</span>
+            <strong id="detailIp">—</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="modal-button cancel" id="closeDetailsButton">
+          Close
+        </button>
+
+        <button class="modal-button primary" id="exportSingleLogButton">
+          Export Log
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">
+    <i data-lucide="circle-check"></i>
+    <span id="toastMessage">Action completed.</span>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const rows = Array.from(
+      document.querySelectorAll("#logsTableBody tr")
+    );
+
+    const logSearch = document.getElementById("logSearch");
+    const typeFilter = document.getElementById("typeFilter");
+    const statusFilter = document.getElementById("statusFilter");
+    const deviceFilter = document.getElementById("deviceFilter");
+
+    const actionPopup = document.getElementById("actionPopup");
+    const detailsModal = document.getElementById("detailsModal");
+
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toastMessage");
+
+    let selectedRow = null;
+    let currentPage = 1;
+    let toastTimer;
+
+    function showToast(message) {
+      toastMessage.textContent = message;
+      toast.classList.add("show");
+
+      clearTimeout(toastTimer);
+
+      toastTimer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2200);
+    }
+
+    function filterLogs() {
+      const keyword = logSearch.value.trim().toLowerCase();
+      const type = typeFilter.value;
+      const status = statusFilter.value;
+      const device = deviceFilter.value;
+
+      let visibleCount = 0;
+
+      rows.forEach((row) => {
+        const searchableText = [
+          row.dataset.time,
+          row.dataset.type,
+          row.dataset.description,
+          row.dataset.deviceFull,
+          row.dataset.user,
+          row.dataset.ip,
+          row.dataset.status
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        const matchesKeyword = searchableText.includes(keyword);
+
+        const matchesType =
+          type === "all" || row.dataset.type === type;
+
+        const matchesStatus =
+          status === "all" || row.dataset.status === status;
+
+        const matchesDevice =
+          device === "all" || row.dataset.device === device;
+
+        const matches =
+          matchesKeyword &&
+          matchesType &&
+          matchesStatus &&
+          matchesDevice;
+
+        row.hidden = !matches;
+
+        if (matches) {
+          visibleCount += 1;
+        }
+      });
+
+      document.getElementById("entriesInfo").textContent =
+        keyword ||
+        type !== "all" ||
+        status !== "all" ||
+        device !== "all"
+          ? `Showing ${visibleCount} matching log${
+              visibleCount === 1 ? "" : "s"
+            }`
+          : "Showing 0 logs";
+    }
+
+    function openDetails(row) {
+      selectedRow = row;
+
+      document.getElementById("detailId").textContent =
+        row.dataset.id;
+
+      document.getElementById("detailStatus").textContent =
+        row.dataset.status;
+
+      document.getElementById("detailTime").textContent =
+        row.dataset.time;
+
+      document.getElementById("detailType").textContent =
+        row.dataset.type;
+
+      document.getElementById("detailDescription").textContent =
+        row.dataset.description;
+
+      document.getElementById("detailDevice").textContent =
+        row.dataset.deviceFull;
+
+      document.getElementById("detailUser").textContent =
+        row.dataset.user;
+
+      document.getElementById("detailIp").textContent =
+        row.dataset.ip;
+
+      detailsModal.classList.add("show");
+    }
+
+    function closeDetails() {
+      detailsModal.classList.remove("show");
+    }
+
+    function createCsv(logRows) {
+      const data = [
+        [
+          "Log Number",
+          "Time",
+          "Log Type",
+          "Description",
+          "Device",
+          "User",
+          "IP Address",
+          "Status"
+        ]
+      ];
+
+      logRows.forEach((row) => {
+        data.push([
+          row.dataset.id,
+          row.dataset.time,
+          row.dataset.type,
+          row.dataset.description,
+          row.dataset.deviceFull,
+          row.dataset.user,
+          row.dataset.ip,
+          row.dataset.status
+        ]);
+      });
+
+      return data
+        .map((row) =>
+          row
+            .map((value) =>
+              `"${String(value).replace(/"/g, '""')}"`
+            )
+            .join(",")
+        )
+        .join("\n");
+    }
+
+    function downloadCsv(logRows, filename) {
+      const csv = createCsv(logRows);
+
+      const blob = new Blob([csv], {
+        type: "text/csv;charset=utf-8;"
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = filename;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(url);
+    }
+
+    function copyLog(row) {
+      const text = [
+        `Log Number: ${row.dataset.id}`,
+        `Time: ${row.dataset.time}`,
+        `Type: ${row.dataset.type}`,
+        `Description: ${row.dataset.description}`,
+        `Device: ${row.dataset.deviceFull}`,
+        `User: ${row.dataset.user}`,
+        `IP Address: ${row.dataset.ip}`,
+        `Status: ${row.dataset.status}`
+      ].join("\n");
+
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          showToast("Log copied to clipboard.");
+        })
+        .catch(() => {
+          showToast("Unable to copy the log.");
+        });
+    }
+
+    document
+      .querySelectorAll(".nav-item")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          document
+            .querySelectorAll(".nav-item")
+            .forEach((item) => {
+              item.classList.remove("active");
+            });
+
+          button.classList.add("active");
+          showToast(`${button.dataset.page} selected.`);
+        });
+      });
+
+    logSearch.addEventListener("input", filterLogs);
+    typeFilter.addEventListener("change", filterLogs);
+    statusFilter.addEventListener("change", filterLogs);
+    deviceFilter.addEventListener("change", filterLogs);
+
+    document
+      .getElementById("filterButton")
+      .addEventListener("click", () => {
+        filterLogs();
+        showToast("Log filters applied.");
+      });
+
+    document
+      .getElementById("refreshLogsButton")
+      .addEventListener("click", () => {
+        const button = document.getElementById(
+          "refreshLogsButton"
+        );
+
+        const icon = button.querySelector("svg");
+
+        button.disabled = true;
+
+        if (icon) {
+          icon.style.transition = "transform 0.7s ease";
+          icon.style.transform = "rotate(360deg)";
+        }
+
+        setTimeout(() => {
+          button.disabled = false;
+
+          if (icon) {
+            icon.style.transform = "rotate(0deg)";
+          }
+
+          showToast("Logs refreshed successfully.");
+        }, 700);
+      });
+
+    document
+      .getElementById("exportLogsButton")
+      .addEventListener("click", () => {
+        const visibleRows = rows.filter((row) => !row.hidden);
+
+        downloadCsv(
+          visibleRows,
+          "gms-attendance-logs.csv"
+        );
+
+        showToast("Logs exported successfully.");
+      });
+
+    document
+      .getElementById("exportArrowButton")
+      .addEventListener("click", () => {
+        showToast("Export current filtered logs.");
+      });
+
+    document
+      .querySelectorAll(".action-button")
+      .forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+
+          selectedRow = button.closest("tr");
+
+          const rect = button.getBoundingClientRect();
+
+          actionPopup.style.top =
+            `${Math.min(
+              rect.bottom + 5,
+              window.innerHeight - 125
+            )}px`;
+
+          actionPopup.style.left =
+            `${Math.max(10, rect.right - 158)}px`;
+
+          actionPopup.classList.add("show");
+        });
+      });
+
+    document
+      .querySelectorAll(".popup-action")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          if (!selectedRow) {
+            return;
+          }
+
+          const action = button.dataset.action;
+
+          actionPopup.classList.remove("show");
+
+          if (action === "view") {
+            openDetails(selectedRow);
+          }
+
+          if (action === "copy") {
+            copyLog(selectedRow);
+          }
+
+          if (action === "export") {
+            downloadCsv(
+              [selectedRow],
+              `log-${selectedRow.dataset.id}.csv`
+            );
+
+            showToast("Log exported successfully.");
+          }
+        });
+      });
+
+    document.addEventListener("click", (event) => {
+      if (
+        !event.target.closest(".action-button") &&
+        !event.target.closest(".action-popup")
+      ) {
+        actionPopup.classList.remove("show");
+      }
+    });
+
+    document
+      .getElementById("closeDetailsModal")
+      .addEventListener("click", closeDetails);
+
+    document
+      .getElementById("closeDetailsButton")
+      .addEventListener("click", closeDetails);
+
+    document
+      .getElementById("exportSingleLogButton")
+      .addEventListener("click", () => {
+        if (!selectedRow) {
+          return;
+        }
+
+        downloadCsv(
+          [selectedRow],
+          `log-${selectedRow.dataset.id}.csv`
+        );
+
+        showToast("Log exported successfully.");
+      });
+
+    document
+      .querySelectorAll(".page-button[data-page]")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          currentPage = Number(button.dataset.page);
+
+          document
+            .querySelectorAll(".page-button[data-page]")
+            .forEach((pageButton) => {
+              pageButton.classList.toggle(
+                "active",
+                Number(pageButton.dataset.page) === currentPage
+              );
+            });
+
+          document.getElementById("entriesInfo").textContent =
+            currentPage === 1
+              ? "Showing 0 logs"
+              : `Showing page ${currentPage} of 1,246`;
+
+          showToast(`Page ${currentPage} selected.`);
+        });
+      });
+
+    document
+      .getElementById("firstPage")
+      .addEventListener("click", () => {
+        currentPage = 1;
+
+        document
+          .querySelectorAll(".page-button[data-page]")
+          .forEach((button) => {
+            button.classList.toggle(
+              "active",
+              Number(button.dataset.page) === 1
+            );
+          });
+
+        document.getElementById("entriesInfo").textContent =
+          "Showing 0 logs";
+      });
+
+    document
+      .getElementById("lastPage")
+      .addEventListener("click", () => {
+        currentPage = 1246;
+
+        document
+          .querySelectorAll(".page-button[data-page]")
+          .forEach((button) => {
+            button.classList.toggle(
+              "active",
+              Number(button.dataset.page) === 1246
+            );
+          });
+
+        document.getElementById("entriesInfo").textContent =
+          "Showing 0 logs";
+      });
+
+    document
+      .getElementById("previousPage")
+      .addEventListener("click", () => {
+        if (currentPage <= 1) {
+          return;
+        }
+
+        currentPage -= 1;
+
+        document.getElementById("entriesInfo").textContent =
+          `Showing page ${currentPage} of 1,246`;
+
+        showToast(`Page ${currentPage} selected.`);
+      });
+
+    document
+      .getElementById("nextPage")
+      .addEventListener("click", () => {
+        if (currentPage >= 1246) {
+          return;
+        }
+
+        currentPage += 1;
+
+        document.getElementById("entriesInfo").textContent =
+          `Showing page ${currentPage} of 1,246`;
+
+        showToast(`Page ${currentPage} selected.`);
+      });
+
+    detailsModal.addEventListener("click", (event) => {
+      if (event.target === detailsModal) {
+        closeDetails();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeDetails();
+        actionPopup.classList.remove("show");
+      }
+    });
+  </script>
+  <script src="/functional-pages.js?v=20260713-72"></script>
+</body>
+</html>

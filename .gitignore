@@ -1,0 +1,17 @@
+.env
+.pgpass
+.postgres-install-secret.tmp
+node_modules/
+__pycache__/
+*.pyc
+*.log
+data/audit.jsonl
+data/*.json
+data/*.bak
+!data/.gitkeep
+public/images/employees/
+arduino/**/secrets.h
+*.tmp
+attendance.before-json-import-*.db
+attendance.db
+backups/

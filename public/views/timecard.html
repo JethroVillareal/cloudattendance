@@ -1,0 +1,2098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GMS Attendance Server - Time Card</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --background: #f7f9fc;
+      --surface: #ffffff;
+      --surface-soft: #fbfcfe;
+
+      --navy: #10213f;
+      --text: #34425f;
+      --muted: #73809a;
+
+      --border: #dce4ef;
+      --border-soft: #e8edf4;
+
+      --green: #07866f;
+      --green-dark: #066b5a;
+      --green-soft: #e8f8f3;
+
+      --orange: #ef8200;
+      --orange-soft: #fff3e5;
+
+      --red: #ef3340;
+      --red-soft: #fff0f1;
+
+      --purple: #7138b3;
+      --purple-soft: #f3edfb;
+
+      --blue: #1477e3;
+      --blue-soft: #edf5ff;
+
+      --yellow: #e99a00;
+      --yellow-soft: #fff6df;
+
+      --shadow:
+        0 1px 2px rgba(15, 23, 42, 0.03),
+        0 5px 18px rgba(15, 23, 42, 0.045);
+
+      --radius: 9px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: "Inter", sans-serif;
+      background: var(--background);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    button,
+    select,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 198px minmax(0, 1fr);
+    }
+
+    /* SIDEBAR */
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 198px;
+      padding: 14px 11px;
+      background: #ffffff;
+      border-right: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .brand {
+      min-height: 60px;
+      padding: 0 4px 13px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .brand-logo {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      border-radius: 8px;
+      background: linear-gradient(145deg, #162847, #09182e);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      box-shadow: 0 7px 16px rgba(16, 33, 63, 0.2);
+    }
+
+    .brand-info h1 {
+      color: var(--navy);
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .brand-info p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 500;
+    }
+
+    .navigation {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-item {
+      width: 100%;
+      min-height: 39px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: #33415e;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      font-size: 10px;
+      font-weight: 650;
+      transition: 0.18s ease;
+    }
+
+    .nav-item svg {
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
+    }
+
+    .nav-item:hover {
+      color: var(--green-dark);
+      background: #f2faf7;
+    }
+
+    .nav-item.active {
+      color: #075f51;
+      background: linear-gradient(90deg, #e7f8f2, #eefaf7);
+      border-color: #bde7db;
+    }
+
+    .server-status {
+      margin-top: auto;
+      min-height: 44px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fbfcfe;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 8px;
+      border-radius: 50%;
+      background: #15985c;
+      box-shadow: 0 0 0 3px rgba(21, 152, 92, 0.08);
+    }
+
+    .server-status svg {
+      width: 13px;
+      height: 13px;
+      margin-left: auto;
+      color: var(--muted);
+    }
+
+    /* MAIN */
+
+    .main {
+      grid-column: 2;
+      min-width: 0;
+      padding: 15px 18px 16px;
+    }
+
+    .page-header {
+      min-height: 51px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .page-title h2 {
+      color: var(--navy);
+      font-size: 22px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .page-title p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-weight: 700;
+      transition:
+        transform 0.18s ease,
+        background 0.18s ease,
+        border-color 0.18s ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button-outline {
+      min-height: 35px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 9px;
+      box-shadow: var(--shadow);
+    }
+
+    .button-outline:hover {
+      background: #f9fbfd;
+    }
+
+    .button-outline svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .button-primary {
+      min-height: 35px;
+      padding: 0 16px;
+      background: linear-gradient(180deg, #0a8973, #066d5c);
+      color: #ffffff;
+      font-size: 9px;
+      box-shadow: 0 6px 15px rgba(6, 109, 92, 0.18);
+    }
+
+    .button-warning {
+      min-height: 35px;
+      padding: 0 13px;
+      background: linear-gradient(180deg, #ffe9ad, #ffdc7f);
+      color: #a76100;
+      font-size: 9px;
+    }
+
+    /* FILTERS */
+
+    .filters-panel {
+      min-height: 83px;
+      margin-bottom: 13px;
+      padding: 13px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      display: grid;
+      grid-template-columns:
+        minmax(165px, 1.05fr)
+        minmax(170px, 0.95fr)
+        minmax(230px, 1.2fr)
+        minmax(145px, 0.85fr)
+        minmax(140px, 0.82fr)
+        minmax(140px, 0.82fr)
+        auto
+        35px;
+      gap: 12px;
+      align-items: end;
+      box-shadow: var(--shadow);
+    }
+
+    .filter-group {
+      min-width: 0;
+    }
+
+    .filter-group label,
+    .view-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #4c5970;
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .input-box {
+      position: relative;
+      min-height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-box > svg {
+      position: absolute;
+      left: 10px;
+      width: 14px;
+      height: 14px;
+      color: var(--navy);
+      pointer-events: none;
+    }
+
+    .input-box select,
+    .input-box input {
+      width: 100%;
+      min-height: 32px;
+      border: 0;
+      outline: 0;
+      appearance: none;
+      background: transparent;
+      color: var(--navy);
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .input-box select {
+      padding: 0 30px 0 11px;
+      cursor: pointer;
+    }
+
+    .input-box.with-icon select,
+    .input-box.with-icon input {
+      padding-left: 33px;
+    }
+
+    .input-box input {
+      padding-right: 10px;
+    }
+
+    .input-box .arrow {
+      left: auto;
+      right: 9px;
+      width: 12px;
+      height: 12px;
+      color: var(--muted);
+    }
+
+    .employee-select {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 32px;
+      padding: 0 28px 0 8px;
+      border: 0;
+      background: transparent;
+      color: var(--navy);
+      text-align: left;
+      font-size: 9px;
+      font-weight: 650;
+    }
+
+    .mini-avatar {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #9b4c35, #d98d73);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 7px;
+      font-weight: 800;
+      border: 2px solid #eef2f7;
+    }
+
+    .view-tabs {
+      min-height: 34px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fbfcfe;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .view-tab {
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--navy);
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .view-tab.active {
+      color: #ffffff;
+      background: linear-gradient(180deg, #0a9078, #07705f);
+      box-shadow: 0 4px 10px rgba(7, 112, 95, 0.2);
+    }
+
+    .filter-icon-button {
+      width: 35px;
+      height: 35px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .filter-icon-button:hover {
+      background: var(--green-soft);
+      color: var(--green-dark);
+    }
+
+    .filter-icon-button svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    /* STATS */
+
+    .stats-grid {
+      margin-bottom: 13px;
+      display: grid;
+      grid-template-columns: repeat(7, minmax(135px, 1fr));
+      gap: 11px;
+    }
+
+    .stat-card {
+      min-height: 94px;
+      padding: 10px 11px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-icon {
+      width: 37px;
+      height: 37px;
+      flex: 0 0 37px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      margin-top: 1px;
+    }
+
+    .stat-icon svg {
+      width: 22px;
+      height: 22px;
+      stroke-width: 2;
+    }
+
+    .stat-icon.green {
+      color: var(--green);
+      background: var(--green-soft);
+      border: 1px solid #c7ebe1;
+    }
+
+    .stat-icon.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+      border: 1px solid #ffdfbb;
+    }
+
+    .stat-icon.red {
+      color: var(--red);
+      background: var(--red-soft);
+      border: 1px solid #ffd0d4;
+    }
+
+    .stat-icon.purple {
+      color: var(--purple);
+      background: var(--purple-soft);
+      border: 1px solid #e2d3f4;
+    }
+
+    .stat-icon.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+      border: 1px solid #cfe4ff;
+    }
+
+    .stat-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .stat-info h3 {
+      color: #4b5870;
+      font-size: 8px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .stat-info strong {
+      display: block;
+      margin-top: 7px;
+      color: var(--navy);
+      font-size: 18px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      white-space: nowrap;
+    }
+
+    .stat-info p {
+      margin-top: 9px;
+      color: #53627c;
+      font-size: 8px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+
+    .stat-card.total .stat-info strong {
+      font-size: 19px;
+    }
+
+    .stat-card.total .stat-info p {
+      margin-top: 6px;
+    }
+
+    /* CONTENT GRID */
+
+    .content-grid {
+      margin-bottom: 13px;
+      display: grid;
+      grid-template-columns: minmax(0, 2.25fr) minmax(290px, 0.87fr);
+      gap: 13px;
+      align-items: stretch;
+    }
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      min-height: 49px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-header h3 {
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .panel-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .record-count {
+      color: #53627c;
+      font-size: 8px;
+      font-weight: 600;
+    }
+
+    .export-button {
+      min-height: 28px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--navy);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .export-button:hover {
+      background: var(--green-soft);
+      color: var(--green-dark);
+    }
+
+    .export-button svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* TABLE */
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    thead {
+      background: #fbfcfe;
+    }
+
+    th {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #66728a;
+      text-align: left;
+      font-size: 7px;
+      line-height: 1;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+    }
+
+    td {
+      height: 36px;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border-soft);
+      color: #394760;
+      font-size: 8px;
+      font-weight: 500;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    tbody tr:hover {
+      background: #f9fcfb;
+    }
+
+    tbody tr.selected {
+      background: linear-gradient(90deg, #e9f9f4, #f7fdfb);
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .verification-cell {
+      line-height: 1.45;
+    }
+
+    .verification-cell strong {
+      display: block;
+      color: #4a5870;
+      font-size: 7px;
+      font-weight: 700;
+    }
+
+    .verification-cell span {
+      display: block;
+      color: var(--muted);
+      font-size: 7px;
+      font-weight: 500;
+    }
+
+    .row-avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #92543d, #d39278);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 6px;
+      font-weight: 800;
+      border: 2px solid #eef2f7;
+    }
+
+    .action-menu {
+      width: 22px;
+      height: 22px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: #ffffff;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .action-menu:hover {
+      background: var(--green-soft);
+      color: var(--green-dark);
+    }
+
+    .action-menu svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .badge {
+      min-height: 19px;
+      padding: 0 6px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.present {
+      color: var(--green-dark);
+      background: var(--green-soft);
+      border: 1px solid #c8eadf;
+    }
+
+    .badge.absent {
+      color: var(--red);
+      background: var(--red-soft);
+      border: 1px solid #ffd0d4;
+    }
+
+    .badge.late {
+      color: #c96d00;
+      background: var(--orange-soft);
+      border: 1px solid #ffe0bb;
+    }
+
+    .badge.overtime {
+      color: #ce7200;
+      background: var(--orange-soft);
+      border: 1px solid #ffe0bb;
+    }
+
+    .badge.undertime {
+      color: #176dc4;
+      background: var(--blue-soft);
+      border: 1px solid #cfe4ff;
+    }
+
+    .badge.leave {
+      color: var(--purple);
+      background: var(--purple-soft);
+      border: 1px solid #e2d2f4;
+    }
+
+    .badge.pending {
+      color: #c86d00;
+      background: var(--orange-soft);
+      border: 1px solid #ffe0bb;
+    }
+
+    .badge.correction {
+      color: var(--red);
+      background: var(--red-soft);
+      border: 1px solid #ffd0d4;
+    }
+
+    .badge.verified {
+      color: var(--green-dark);
+      background: var(--green-soft);
+      border: 1px solid #c8eadf;
+    }
+
+    /* RECORD DETAILS */
+
+    .details-panel {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .details-header {
+      min-height: 49px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .details-header h3 {
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .details-body {
+      padding: 8px 13px 12px;
+      flex: 1;
+    }
+
+    .detail-row {
+      min-height: 31px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border-soft);
+      display: grid;
+      grid-template-columns: 1fr 1.3fr;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .detail-row:last-of-type {
+      border-bottom: 0;
+    }
+
+    .detail-label {
+      color: #65728a;
+      font-size: 8px;
+      font-weight: 500;
+    }
+
+    .detail-value {
+      color: var(--navy);
+      font-size: 8px;
+      font-weight: 650;
+      text-align: right;
+      line-height: 1.4;
+    }
+
+    .verified-by {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+    }
+
+    .verified-avatar {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #48576d, #8b98aa);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 6px;
+      font-weight: 800;
+    }
+
+    .attachments {
+      margin-top: 11px;
+    }
+
+    .attachments h4 {
+      color: #66728a;
+      font-size: 8px;
+      font-weight: 500;
+    }
+
+    .attachment-empty {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 8px;
+    }
+
+    .attachment-icon {
+      width: 25px;
+      height: 25px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #f8fafc;
+      display: grid;
+      place-items: center;
+    }
+
+    .attachment-icon svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .details-footer {
+      padding: 12px 13px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .history-button {
+      min-height: 35px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .history-button:hover {
+      background: #f7f9fc;
+    }
+
+    /* BOTTOM SUMMARY */
+
+    .summary-panel {
+      min-height: 67px;
+      padding: 9px 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #ffffff;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      box-shadow: var(--shadow);
+    }
+
+    .summary-item {
+      min-width: 0;
+      padding: 7px 14px;
+      border-right: 1px solid var(--border-soft);
+    }
+
+    .summary-item:last-child {
+      border-right: 0;
+    }
+
+    .summary-item span {
+      display: block;
+      color: #64718a;
+      font-size: 8px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .summary-item strong {
+      display: block;
+      margin-top: 7px;
+      color: var(--navy);
+      font-size: 14px;
+      line-height: 1;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    /* MODAL */
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal {
+      width: min(460px, 100%);
+      border-radius: 12px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.26);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-header {
+      min-height: 54px;
+      padding: 0 17px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h3 {
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .modal-close {
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 7px;
+      background: #f1f5f9;
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+    }
+
+    .modal-close svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .modal-body {
+      padding: 17px;
+      color: #4f5d75;
+      font-size: 11px;
+      line-height: 1.65;
+    }
+
+    .modal-footer {
+      padding: 13px 17px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* TOAST */
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 1000;
+      min-width: 240px;
+      min-height: 46px;
+      padding: 0 14px;
+      border-radius: 8px;
+      background: #10203b;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 10px;
+      font-weight: 700;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.27);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(20px);
+      transition: 0.25s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast svg {
+      width: 17px;
+      height: 17px;
+      color: #4ade80;
+    }
+
+    /* RESPONSIVE */
+
+    @media (max-width: 1500px) {
+      .filters-panel {
+        grid-template-columns:
+          minmax(165px, 1fr)
+          minmax(170px, 1fr)
+          minmax(220px, 1.15fr)
+          minmax(145px, 0.8fr);
+      }
+
+      .branch-filter,
+      .status-filter,
+      .load-filter,
+      .filter-more {
+        grid-row: 2;
+      }
+
+      .branch-filter {
+        grid-column: 1;
+      }
+
+      .status-filter {
+        grid-column: 2;
+      }
+
+      .load-filter {
+        grid-column: 3;
+      }
+
+      .filter-more {
+        grid-column: 4;
+        justify-self: end;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(4, minmax(145px, 1fr));
+      }
+    }
+
+    @media (max-width: 1170px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .details-panel {
+        min-height: auto;
+      }
+
+      .summary-panel {
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .summary-item:nth-child(4) {
+        border-right: 0;
+      }
+
+      .summary-item:nth-child(-n + 4) {
+        border-bottom: 1px solid var(--border-soft);
+      }
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 74px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        width: 74px;
+        align-items: center;
+      }
+
+      .brand {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .brand-info,
+      .nav-item span,
+      .server-status span,
+      .server-status svg {
+        display: none;
+      }
+
+      .navigation {
+        width: 100%;
+      }
+
+      .nav-item {
+        width: 46px;
+        margin: 0 auto;
+        padding: 0;
+        justify-content: center;
+      }
+
+      .server-status {
+        width: 46px;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .main {
+        grid-column: 2;
+      }
+
+      .filters-panel {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .filter-group,
+      .branch-filter,
+      .status-filter,
+      .load-filter,
+      .filter-more {
+        grid-column: auto;
+        grid-row: auto;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, minmax(145px, 1fr));
+      }
+    }
+
+    @media (max-width: 650px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        padding: 10px;
+      }
+
+      .brand {
+        justify-content: flex-start;
+        border-bottom: 0;
+      }
+
+      .brand-info {
+        display: block;
+      }
+
+      .navigation {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .nav-item {
+        width: 100%;
+      }
+
+      .server-status {
+        display: none;
+      }
+
+      .main {
+        padding: 13px 10px 16px;
+      }
+
+      .filters-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .summary-panel {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .summary-item {
+        border-bottom: 1px solid var(--border-soft);
+      }
+
+      .summary-item:nth-child(even) {
+        border-right: 0;
+      }
+
+      .page-title h2 {
+        font-size: 19px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/standalone-shared.css?v=20260713-70" />
+</head>
+
+<body class="live-timecard-loading">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">GMS</div>
+
+        <div class="brand-info">
+          <h1>Attendance Server</h1>
+          <p>Main Branch</p>
+        </div>
+      </div>
+
+      <nav class="navigation">
+        <button class="nav-item" data-page="Dashboard">
+          <i data-lucide="house"></i>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-item active" data-page="Time Card">
+          <i data-lucide="calendar-days"></i>
+          <span>Time Card</span>
+        </button>
+
+        <button class="nav-item" data-page="Enrollment">
+          <i data-lucide="fingerprint"></i>
+          <span>Enrollment</span>
+        </button>
+
+        <button class="nav-item" data-page="Employees">
+          <i data-lucide="users"></i>
+          <span>Employees</span>
+        </button>
+
+        <button class="nav-item" data-page="Devices">
+          <i data-lucide="monitor-smartphone"></i>
+          <span>Devices</span>
+        </button>
+
+        <button class="nav-item" data-page="Settings">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </button>
+
+        <button class="nav-item" data-page="Logs">
+          <i data-lucide="file-text"></i>
+          <span>Logs</span>
+        </button>
+      </nav>
+
+      <div class="server-status">
+        <span class="status-dot"></span>
+        <span>Online • Asia/Manila</span>
+        <i data-lucide="chevron-right"></i>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div class="page-title">
+          <h2>Time Card</h2>
+          <p>View and verify employee daily attendance records</p>
+        </div>
+
+        <button class="button button-outline" id="refreshButton">
+          <i data-lucide="refresh-cw"></i>
+          Refresh
+        </button>
+      </header>
+
+      <section class="filters-panel">
+        <div class="filter-group">
+          <label>Employee</label>
+
+          <div class="input-box">
+            <button class="employee-select">
+              <span class="mini-avatar">—</span>
+              <span>Waiting for live data</span>
+            </button>
+
+            <i class="arrow" data-lucide="chevron-down"></i>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label>Date Range</label>
+
+          <div class="input-box with-icon">
+            <i data-lucide="calendar-days"></i>
+
+            <input
+              id="dateRange"
+              type="text"
+              value=""
+              readonly
+            />
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <span class="view-label">View By</span>
+
+          <div class="view-tabs">
+            <button class="view-tab active" data-view="Daily">Daily</button>
+            <button class="view-tab" data-view="Weekly">Weekly</button>
+            <button class="view-tab" data-view="Monthly">Monthly</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label>Cutoff Period</label>
+
+          <div class="input-box">
+            <select id="cutoffFilter">
+              <option>1 – 15 (Current)</option>
+              <option>16 – End</option>
+              <option>Full Month</option>
+            </select>
+
+            <i class="arrow" data-lucide="chevron-down"></i>
+          </div>
+        </div>
+
+        <div class="filter-group branch-filter">
+          <label>Branch</label>
+
+          <div class="input-box">
+            <select id="branchFilter">
+              <option>All Branches</option>
+            </select>
+
+            <i class="arrow" data-lucide="chevron-down"></i>
+          </div>
+        </div>
+
+        <div class="filter-group status-filter">
+          <label>Status</label>
+
+          <div class="input-box">
+            <select id="statusFilter">
+              <option>All Statuses</option>
+              <option>Present</option>
+              <option>Late</option>
+              <option>Absent</option>
+              <option>On Leave</option>
+              <option>Undertime</option>
+              <option>Overtime</option>
+            </select>
+
+            <i class="arrow" data-lucide="chevron-down"></i>
+          </div>
+        </div>
+
+        <div class="load-filter">
+          <button class="button button-primary" id="loadButton">
+            Load
+          </button>
+        </div>
+
+        <div class="filter-more">
+          <button class="filter-icon-button" id="filterButton">
+            <i data-lucide="list-filter"></i>
+          </button>
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        <article class="stat-card">
+          <div class="stat-icon green">
+            <i data-lucide="calendar-check-2"></i>
+          </div>
+
+          <div class="stat-info">
+            <h3>Present</h3>
+            <strong>0</strong>
+            <p>0%</p>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-icon orange">
+            <i data-lucide="clock-3"></i>
+          </div>
+
+          <div class="stat-info">
+            <h3>Late</h3>
+            <strong>0</strong>
+            <p>0%</p>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-icon red">
+            <i data-lucide="user-round-x"></i>
+          </div>
+
+          <div class="stat-info">
+            <h3>Absent</h3>
+            <strong>0</strong>
+            <p>0%</p>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-icon purple">
+            <i data-lucide="plane"></i>
+          </div>
+
+          <div class="stat-info">
+            <h3>On Leave</h3>
+            <strong>0</strong>
+            <p>0%</p>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-icon blue">
+            <i data-lucide="clock-4"></i>
+          </div>
+
+          <div class="stat-info">
+            <h3>Undertime</h3>
+            <strong>0</strong>
+            <p>0%</p>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-icon orange">
+            <i data-lucide="clock-arrow-up"></i>
+          </div>
+
+          <div class="stat-info">
+            <h3>Overtime</h3>
+            <strong>0</strong>
+            <p>0%</p>
+          </div>
+        </article>
+
+        <article class="stat-card total">
+          <div class="stat-icon green">
+            <i data-lucide="timer"></i>
+          </div>
+
+          <div class="stat-info">
+            <h3>Total Hours</h3>
+            <strong>0h 0m</strong>
+            <p>Waiting for live data</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <h3>Daily Records</h3>
+
+            <div class="panel-actions">
+              <label class="record-search-wrap">
+                <i data-lucide="search"></i>
+                <input id="recordSearch" type="search" placeholder="Search employee name..." autocomplete="off" />
+              </label>
+              <span class="record-count">0 live records</span>
+
+              <button class="export-button" id="exportButton">
+                <i data-lucide="file-down"></i>
+                Export PDF
+              </button>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table id="recordsTable">
+              <thead>
+                <tr>
+                  <th style="width: 10%">Date</th>
+                  <th style="width: 5%">Day</th>
+                  <th style="width: 8%">Time In</th>
+                  <th style="width: 8%">Time Out</th>
+                  <th style="width: 7%">Break</th>
+                  <th style="width: 7%">Reg Hrs</th>
+                  <th style="width: 7%">OT Hrs</th>
+                  <th style="width: 6%">Late</th>
+                  <th style="width: 8%">Undertime</th>
+                  <th style="width: 9%">Status</th>
+                  <th style="width: 12%">Verification</th>
+                  <th style="width: 12%">Employee</th>
+                  <th style="width: 4%">Action</th>
+                </tr>
+              </thead>
+
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <aside class="panel details-panel">
+          <div class="details-header">
+            <h3>Record Details</h3>
+            <span class="badge verified" id="detailVerification">
+              No record selected
+            </span>
+          </div>
+
+          <div class="details-body">
+            <div class="detail-row">
+              <span class="detail-label">Employee</span>
+              <span class="detail-value">Waiting for live data</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Date</span>
+              <span class="detail-value" id="detailDate">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Schedule</span>
+              <span class="detail-value">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Time In (Actual)</span>
+              <span class="detail-value" id="detailTimeIn">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Time Out (Actual)</span>
+              <span class="detail-value" id="detailTimeOut">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Break Duration</span>
+              <span class="detail-value">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Regular Hours</span>
+              <span class="detail-value" id="detailRegular">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Overtime Hours</span>
+              <span class="detail-value" id="detailOvertime">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Late</span>
+              <span class="detail-value" id="detailLate">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Undertime</span>
+              <span class="detail-value" id="detailUndertime">—</span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Status</span>
+              <span class="detail-value">
+                <span class="badge" id="detailStatus">—</span>
+              </span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Verified By</span>
+
+              <span class="detail-value verified-by">
+                <span>—</span>
+              </span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Verified At</span>
+              <span class="detail-value" id="detailVerifiedAt">
+                
+              </span>
+            </div>
+
+            <div class="detail-row">
+              <span class="detail-label">Notes</span>
+              <span class="detail-value">—</span>
+            </div>
+
+            <div class="attachments">
+              <h4>Attachments</h4>
+
+              <div class="attachment-empty">
+                <span class="attachment-icon">
+                  <i data-lucide="file"></i>
+                </span>
+
+                <span>—</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="details-footer">
+            <button class="button button-outline full-timecard-button" id="fullTimeCardButton">
+              Full Time Card
+            </button>
+            <button class="button button-primary" id="verifyButton">
+              Verify Record
+            </button>
+
+            <button class="button button-warning" id="correctionButton">
+              Request Correction
+            </button>
+
+            <button class="history-button" id="historyButton">
+              View History
+            </button>
+          </div>
+        </aside>
+      </section>
+
+      <section class="summary-panel">
+        <div class="summary-item">
+          <span>Total Regular Hours</span>
+          <strong>0h 0m</strong>
+        </div>
+
+        <div class="summary-item">
+          <span>Total Overtime Hours</span>
+          <strong>0m</strong>
+        </div>
+
+        <div class="summary-item">
+          <span>Total Paid Hours</span>
+          <strong>0h 0m</strong>
+        </div>
+
+        <div class="summary-item">
+          <span>Late (Total)</span>
+          <strong>0m</strong>
+        </div>
+
+        <div class="summary-item">
+          <span>Undertime (Total)</span>
+          <strong>0m</strong>
+        </div>
+
+        <div class="summary-item">
+          <span>Absences</span>
+          <strong>0 day(s)</strong>
+        </div>
+
+        <div class="summary-item">
+          <span>Leaves</span>
+          <strong>0 day(s)</strong>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Record Information</h3>
+
+        <button class="modal-close" id="modalClose">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" id="modalBody">
+        Attendance record information.
+      </div>
+
+      <div class="modal-footer">
+        <button class="button button-outline" id="modalCancel">
+          Cancel
+        </button>
+
+        <button class="button button-outline" id="modalPhoto" hidden>
+          Save Photo
+        </button>
+
+        <button class="button button-primary" id="modalConfirm">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">
+    <i data-lucide="circle-check"></i>
+    <span id="toastMessage">Action completed.</span>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const modalBackdrop = document.getElementById("modalBackdrop");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalBody = document.getElementById("modalBody");
+
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toastMessage");
+
+    let toastTimer;
+
+    function showToast(message) {
+      toastMessage.textContent = message;
+      toast.classList.add("show");
+
+      clearTimeout(toastTimer);
+
+      toastTimer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2200);
+    }
+
+    function openModal(title, message) {
+      modalTitle.textContent = title;
+      modalBody.textContent = message;
+      modalBackdrop.classList.add("show");
+    }
+
+    function closeModal() {
+      modalBackdrop.classList.remove("show");
+    }
+
+    function getBadgeClass(status) {
+      const classes = {
+        Present: "present",
+        Late: "late",
+        Absent: "absent",
+        "On Leave": "leave",
+        Undertime: "undertime",
+        Overtime: "overtime",
+        Verified: "verified",
+        Pending: "pending",
+        "Needs Correction": "correction"
+      };
+
+      return classes[status] || "present";
+    }
+
+    function updateRecordDetails(row) {
+      const data = row.dataset;
+
+      document
+        .querySelectorAll("#recordsTable tbody tr")
+        .forEach((tableRow) => {
+          tableRow.classList.remove("selected");
+        });
+
+      row.classList.add("selected");
+
+      document.getElementById("detailDate").textContent = data.date;
+      document.getElementById("detailTimeIn").textContent = data.timein;
+      document.getElementById("detailTimeOut").textContent = data.timeout;
+      document.getElementById("detailRegular").textContent = data.regular;
+      document.getElementById("detailOvertime").textContent = data.overtime;
+      document.getElementById("detailLate").textContent = data.late;
+      document.getElementById("detailUndertime").textContent =
+        data.undertime;
+
+      document.getElementById("detailVerifiedAt").textContent =
+        data.verifiedat;
+
+      const statusBadge = document.getElementById("detailStatus");
+      statusBadge.textContent = data.status;
+      statusBadge.className = `badge ${getBadgeClass(data.status)}`;
+
+      const verificationBadge = document.getElementById(
+        "detailVerification"
+      );
+
+      verificationBadge.textContent = data.verification;
+      verificationBadge.className =
+        `badge ${getBadgeClass(data.verification)}`;
+    }
+
+    document
+      .querySelectorAll("#recordsTable tbody tr")
+      .forEach((row) => {
+        row.addEventListener("click", (event) => {
+          if (event.target.closest(".action-menu")) {
+            return;
+          }
+
+          updateRecordDetails(row);
+        });
+      });
+
+    document.querySelectorAll(".action-menu").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+
+        const row = button.closest("tr");
+        updateRecordDetails(row);
+
+        openModal(
+          "Attendance Record Actions",
+          `Manage the attendance entry for ${row.dataset.date}. You may verify, request a correction, add a note, or review the original device log.`
+        );
+      });
+    });
+
+    document.querySelectorAll(".view-tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".view-tab").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+
+        button.classList.add("active");
+        showToast(`${button.dataset.view} view selected.`);
+      });
+    });
+
+    document.querySelectorAll(".nav-item").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".nav-item").forEach((item) => {
+          item.classList.remove("active");
+        });
+
+        button.classList.add("active");
+        showToast(`${button.dataset.page} selected.`);
+      });
+    });
+
+    document
+      .getElementById("refreshButton")
+      .addEventListener("click", () => {
+        const button = document.getElementById("refreshButton");
+        const icon = button.querySelector("svg");
+
+        button.disabled = true;
+        button.style.opacity = "0.65";
+
+        if (icon) {
+          icon.style.transition = "transform 0.65s ease";
+          icon.style.transform = "rotate(360deg)";
+        }
+
+        setTimeout(() => {
+          button.disabled = false;
+          button.style.opacity = "1";
+
+          if (icon) {
+            icon.style.transform = "rotate(0deg)";
+          }
+
+          showToast("Time card records refreshed.");
+        }, 650);
+      });
+
+    document
+      .getElementById("loadButton")
+      .addEventListener("click", () => {
+        const branch = document.getElementById("branchFilter").value;
+        const status = document.getElementById("statusFilter").value;
+        const cutoff = document.getElementById("cutoffFilter").value;
+
+        showToast(
+          `Loaded ${branch}, ${status}, ${cutoff}.`
+        );
+      });
+
+    document
+      .getElementById("filterButton")
+      .addEventListener("click", () => {
+        openModal(
+          "Advanced Filters",
+          "Additional filters may include verification status, attendance device, schedule, department, time-in range, and time-out range."
+        );
+      });
+
+    document
+      .getElementById("exportButton")
+      .addEventListener("click", () => {
+        const rows = [
+          [
+            "Date",
+            "Day",
+            "Time In",
+            "Time Out",
+            "Break",
+            "Regular Hours",
+            "Overtime Hours",
+            "Late",
+            "Undertime",
+            "Status",
+            "Verification"
+          ]
+        ];
+
+        document
+          .querySelectorAll("#recordsTable tbody tr")
+          .forEach((row) => {
+            const cells = Array.from(row.querySelectorAll("td"));
+
+            rows.push([
+              cells[0].innerText.trim(),
+              cells[1].innerText.trim(),
+              cells[2].innerText.trim(),
+              cells[3].innerText.trim(),
+              cells[4].innerText.trim(),
+              cells[5].innerText.trim(),
+              cells[6].innerText.trim(),
+              cells[7].innerText.trim(),
+              cells[8].innerText.trim(),
+              cells[9].innerText.trim(),
+              cells[10].innerText.trim().replace(/\n/g, " ")
+            ]);
+          });
+
+        const csvContent = rows
+          .map((row) =>
+            row
+              .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+              .join(",")
+          )
+          .join("\n");
+
+        const blob = new Blob([csvContent], {
+          type: "text/csv;charset=utf-8;"
+        });
+
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+
+        link.href = downloadUrl;
+        link.download = "employee-time-card.csv";
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        URL.revokeObjectURL(downloadUrl);
+
+        showToast("Time card exported successfully.");
+      });
+
+    document
+      .getElementById("verifyButton")
+      .addEventListener("click", () => {
+        openModal(
+          "Verify Attendance Record",
+          "Confirm that the selected attendance record is correct based on the employee schedule, device logs, and supporting information."
+        );
+      });
+
+    document
+      .getElementById("correctionButton")
+      .addEventListener("click", () => {
+        openModal(
+          "Request Correction",
+          "Send this attendance record back for correction. The employee or assigned administrator will be required to provide the correct attendance information."
+        );
+      });
+
+    document
+      .getElementById("historyButton")
+      .addEventListener("click", () => {
+        openModal(
+          "Record History",
+          "This record was created by the attendance device and reviewed by the GWD Administrator. All verification changes and correction requests will appear here."
+        );
+      });
+
+    document
+      .getElementById("modalClose")
+      .addEventListener("click", closeModal);
+
+    document
+      .getElementById("modalCancel")
+      .addEventListener("click", closeModal);
+
+    document
+      .getElementById("modalConfirm")
+      .addEventListener("click", () => {
+        closeModal();
+        showToast("Attendance record updated successfully.");
+      });
+
+    modalBackdrop.addEventListener("click", (event) => {
+      if (event.target === modalBackdrop) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeModal();
+      }
+    });
+  </script>
+  <script src="/functional-pages.js?v=20260713-70"></script>
+</body>
+</html>
