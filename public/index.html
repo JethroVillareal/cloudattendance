@@ -3,33 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GWD Attendance Server</title>
-  <link rel="stylesheet" href="/style.css?v=20260715-login4">
+  <title>GMS Attendance</title>
+  <link rel="stylesheet" href="/style.css?v=20260715-login6">
 </head>
 <body>
   <section id="loginScreen" class="login-screen" aria-labelledby="loginTitle">
-    <div class="login-visual" aria-hidden="true">
-      <div class="login-visual-content">
-        <span class="login-kicker">GWD Workforce Operations</span>
-        <h2>Attendance that keeps every workday in sync.</h2>
-        <p>Securely manage employee time records, fingerprint enrollment, devices, and operational reports in one place.</p>
-        <div class="login-highlights">
-          <span><b>Live</b> device monitoring</span>
-          <span><b>Secure</b> role-based access</span>
-          <span><b>Ready</b> for cloud operations</span>
-        </div>
+    <div class="login-visual">
+      <div class="login-visual-brand">
+        <span class="login-visual-mark"><img src="/images/gwd-logo.jpg" alt=""></span>
+        <span>GMS Attendance</span>
       </div>
+      <div class="login-visual-content">
+        <span class="login-kicker">GMS Workforce</span>
+        <h2>Every workday,<br><em>beautifully recorded.</em></h2>
+        <p>A simpler, smarter way to keep your team connected and every attendance record accurate.</p>
+      </div>
+      <div class="login-system-status"><span></span> Attendance system ready <b>Secure</b></div>
+      <p class="login-visual-footer">© 2026 GMS Attendance</p>
     </div>
     <div class="login-panel">
       <div class="login-card">
-        <div class="login-brand">
-          <span class="login-logo"><img src="/images/gwd-logo.jpg" alt="Gluta White Distributor logo"></span>
-          <div><strong>GWD Attendance</strong><span>Workforce Management</span></div>
-        </div>
+        <div class="login-mobile-brand"><span class="login-logo"><img src="/images/gwd-logo.jpg" alt="GMS Attendance logo"></span><strong>GMS Attendance</strong></div>
         <div class="login-heading">
-          <span class="login-eyebrow">Secure portal</span>
-          <h1 id="loginTitle">Welcome back</h1>
-          <p>Sign in to continue to your attendance dashboard.</p>
+          <span class="login-eyebrow">Welcome back</span>
+          <h1 id="loginTitle">Sign in to your account</h1>
+          <p>Enter your credentials to continue to the dashboard.</p>
         </div>
         <div class="login-mode-switch" role="tablist" aria-label="Sign-in method">
           <button type="button" class="login-mode active" data-login-mode="key" role="tab" aria-selected="true">Server key</button>
@@ -56,13 +54,14 @@
               <input id="loginApiKey" name="apiKey" type="password" autocomplete="off" placeholder="Enter your server access key">
               <button id="toggleLoginApiKey" class="login-reveal" type="button" aria-label="Show server key">Show</button>
             </div>
-            <p class="login-field-help">Enter only the API key value configured in Render. Do not enter the variable name <code>API_KEY</code>.</p>
+            <p class="login-field-help">Use the exact key value from this server's <code>.env</code> or Render environment.</p>
           </div>
           <p id="loginMessage" class="login-message" role="alert" aria-live="polite"></p>
           <button id="loginSubmit" class="login-submit" type="submit"><span>Sign in securely</span><span aria-hidden="true">→</span></button>
         </form>
         <p class="login-footer">Protected attendance workspace · Asia/Manila</p>
       </div>
+      <div class="login-panel-footer"><span>Privacy</span><span>Security</span><span>Help</span></div>
     </div>
   </section>
 
@@ -168,6 +167,6 @@
     </div>
   </div>
 
-  <script src="/login.js?v=20260715-login5"></script>
+  <script src="/login.js?v=20260715-login6"></script>
 </body>
 </html>
