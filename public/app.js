@@ -132,7 +132,7 @@ function defaultWeeklySchedule() {
 }
 
 let authenticationPromise = null;
-let loginMode = 'account';
+let loginMode = 'key';
 
 function setLoginMode(mode) {
   loginMode = mode === 'key' ? 'key' : 'account';
@@ -143,6 +143,7 @@ function setLoginMode(mode) {
   });
   $('accountLoginFields').classList.toggle('hidden', loginMode !== 'account');
   $('keyLoginFields').classList.toggle('hidden', loginMode !== 'key');
+  $('loginMessage').classList.remove('success');
   $('loginMessage').textContent = '';
   setTimeout(() => $(loginMode === 'key' ? 'loginApiKey' : 'loginUsername').focus(), 0);
 }
@@ -159,6 +160,7 @@ function setSecretVisibility(inputId, buttonId) {
 function openLoginScreen() {
   $('loginScreen').classList.remove('hidden');
   document.body.classList.add('login-open');
+  $('loginMessage').classList.remove('success');
   $('loginMessage').textContent = '';
   setTimeout(() => $(loginMode === 'key' ? 'loginApiKey' : 'loginUsername').focus(), 50);
 }
@@ -194,10 +196,18 @@ async function authenticateBrowser() {
             body: JSON.stringify(loginMode === 'key' ? { apiKey } : { username, password })
           });
           const result = await login.json().catch(() => ({}));
-          if (!login.ok) throw new Error(result.message || 'Invalid login credentials.');
+          if (!login.ok) {
+            const invalidMessage = loginMode === 'key'
+              ? 'That server key does not match the API_KEY configured in Render.'
+              : 'The username or password does not match the account configured in Render.';
+            throw new Error(result.code === 'INVALID_CREDENTIALS' ? invalidMessage : result.message || invalidMessage);
+          }
+          $('loginMessage').classList.add('success');
+          $('loginMessage').textContent = 'Signed in. Opening your dashboard...';
           window.location.assign('/dashboard');
           resolve(result);
         } catch (error) {
+          $('loginMessage').classList.remove('success');
           $('loginMessage').textContent = error.message || 'Unable to sign in. Please try again.';
         } finally {
           submit.disabled = false;

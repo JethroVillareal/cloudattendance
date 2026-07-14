@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GWD Attendance Server</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=20260715-login3">
 </head>
 <body>
   <section id="loginScreen" class="login-screen" aria-labelledby="loginTitle">
@@ -32,11 +32,11 @@
           <p>Sign in to continue to your attendance dashboard.</p>
         </div>
         <div class="login-mode-switch" role="tablist" aria-label="Sign-in method">
-          <button type="button" class="login-mode active" data-login-mode="account" role="tab" aria-selected="true">Account</button>
-          <button type="button" class="login-mode" data-login-mode="key" role="tab" aria-selected="false">Server key</button>
+          <button type="button" class="login-mode active" data-login-mode="key" role="tab" aria-selected="true">Server key</button>
+          <button type="button" class="login-mode" data-login-mode="account" role="tab" aria-selected="false">Admin account</button>
         </div>
         <form id="loginForm" class="login-form" novalidate>
-          <div id="accountLoginFields" class="login-fields">
+          <div id="accountLoginFields" class="login-fields hidden">
             <label for="loginUsername">Username</label>
             <div class="login-input-wrap">
               <span class="login-field-icon" aria-hidden="true">@</span>
@@ -49,14 +49,14 @@
               <button id="toggleLoginPassword" class="login-reveal" type="button" aria-label="Show password">Show</button>
             </div>
           </div>
-          <div id="keyLoginFields" class="login-fields hidden">
+          <div id="keyLoginFields" class="login-fields">
             <label for="loginApiKey">Server access key</label>
             <div class="login-input-wrap">
               <span class="login-field-icon" aria-hidden="true">#</span>
               <input id="loginApiKey" name="apiKey" type="password" autocomplete="off" placeholder="Enter your server access key">
               <button id="toggleLoginApiKey" class="login-reveal" type="button" aria-label="Show server key">Show</button>
             </div>
-            <p class="login-field-help">Use the API key configured by your system administrator.</p>
+            <p class="login-field-help">Enter only the API key value configured in Render. Do not enter the variable name <code>API_KEY</code>.</p>
           </div>
           <p id="loginMessage" class="login-message" role="alert" aria-live="polite"></p>
           <button id="loginSubmit" class="login-submit" type="submit"><span>Sign in securely</span><span aria-hidden="true">→</span></button>
@@ -168,6 +168,6 @@
     </div>
   </div>
 
-  <script src="/views-loader.js"></script>
+  <script src="/views-loader.js?v=20260715-login3"></script>
 </body>
 </html>
