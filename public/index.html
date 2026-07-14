@@ -7,6 +7,65 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <section id="loginScreen" class="login-screen hidden" aria-labelledby="loginTitle">
+    <div class="login-visual" aria-hidden="true">
+      <div class="login-visual-content">
+        <span class="login-kicker">GWD Workforce Operations</span>
+        <h2>Attendance that keeps every workday in sync.</h2>
+        <p>Securely manage employee time records, fingerprint enrollment, devices, and operational reports in one place.</p>
+        <div class="login-highlights">
+          <span><b>Live</b> device monitoring</span>
+          <span><b>Secure</b> role-based access</span>
+          <span><b>Ready</b> for cloud operations</span>
+        </div>
+      </div>
+    </div>
+    <div class="login-panel">
+      <div class="login-card">
+        <div class="login-brand">
+          <span class="login-logo"><img src="/images/gwd-logo.jpg" alt="Gluta White Distributor logo"></span>
+          <div><strong>GWD Attendance</strong><span>Workforce Management</span></div>
+        </div>
+        <div class="login-heading">
+          <span class="login-eyebrow">Secure portal</span>
+          <h1 id="loginTitle">Welcome back</h1>
+          <p>Sign in to continue to your attendance dashboard.</p>
+        </div>
+        <div class="login-mode-switch" role="tablist" aria-label="Sign-in method">
+          <button type="button" class="login-mode active" data-login-mode="account" role="tab" aria-selected="true">Account</button>
+          <button type="button" class="login-mode" data-login-mode="key" role="tab" aria-selected="false">Server key</button>
+        </div>
+        <form id="loginForm" class="login-form" novalidate>
+          <div id="accountLoginFields" class="login-fields">
+            <label for="loginUsername">Username</label>
+            <div class="login-input-wrap">
+              <span class="login-field-icon" aria-hidden="true">@</span>
+              <input id="loginUsername" name="username" autocomplete="username" placeholder="Enter your username">
+            </div>
+            <label for="loginPassword">Password</label>
+            <div class="login-input-wrap">
+              <span class="login-field-icon" aria-hidden="true">•</span>
+              <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Enter your password">
+              <button id="toggleLoginPassword" class="login-reveal" type="button" aria-label="Show password">Show</button>
+            </div>
+          </div>
+          <div id="keyLoginFields" class="login-fields hidden">
+            <label for="loginApiKey">Server access key</label>
+            <div class="login-input-wrap">
+              <span class="login-field-icon" aria-hidden="true">#</span>
+              <input id="loginApiKey" name="apiKey" type="password" autocomplete="off" placeholder="Enter your server access key">
+              <button id="toggleLoginApiKey" class="login-reveal" type="button" aria-label="Show server key">Show</button>
+            </div>
+            <p class="login-field-help">Use the API key configured by your system administrator.</p>
+          </div>
+          <p id="loginMessage" class="login-message" role="alert" aria-live="polite"></p>
+          <button id="loginSubmit" class="login-submit" type="submit"><span>Sign in securely</span><span aria-hidden="true">→</span></button>
+        </form>
+        <p class="login-footer">Protected attendance workspace · Asia/Manila</p>
+      </div>
+    </div>
+  </section>
+
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand-block">

@@ -132,27 +132,79 @@ function defaultWeeklySchedule() {
 }
 
 let authenticationPromise = null;
+let loginMode = 'account';
+
+function setLoginMode(mode) {
+  loginMode = mode === 'key' ? 'key' : 'account';
+  document.querySelectorAll('[data-login-mode]').forEach((button) => {
+    const active = button.dataset.loginMode === loginMode;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  $('accountLoginFields').classList.toggle('hidden', loginMode !== 'account');
+  $('keyLoginFields').classList.toggle('hidden', loginMode !== 'key');
+  $('loginMessage').textContent = '';
+  setTimeout(() => $(loginMode === 'key' ? 'loginApiKey' : 'loginUsername').focus(), 0);
+}
+
+function setSecretVisibility(inputId, buttonId) {
+  const input = $(inputId);
+  const button = $(buttonId);
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  button.textContent = show ? 'Hide' : 'Show';
+  button.setAttribute('aria-label', `${show ? 'Hide' : 'Show'} ${inputId === 'loginApiKey' ? 'server key' : 'password'}`);
+}
+
+function openLoginScreen() {
+  $('loginScreen').classList.remove('hidden');
+  document.body.classList.add('login-open');
+  $('loginMessage').textContent = '';
+  setTimeout(() => $(loginMode === 'key' ? 'loginApiKey' : 'loginUsername').focus(), 50);
+}
+
+function closeLoginScreen() {
+  $('loginScreen').classList.add('hidden');
+  document.body.classList.remove('login-open');
+  $('loginPassword').value = '';
+  $('loginApiKey').value = '';
+}
 
 async function authenticateBrowser() {
   if (!authenticationPromise) {
-    authenticationPromise = (async () => {
-      const credential = window.prompt('Enter the server key or your username:');
-      if (!credential) throw new Error('Authentication is required.');
-      const looksLikeUsername = credential.length < 16 && /^[a-z0-9._-]+$/i.test(credential);
-      let login;
-      if (looksLikeUsername) {
-        const password = window.prompt(`Enter the password for ${credential}:`);
-        if (!password) throw new Error('Authentication is required.');
-        login = await fetch('/api/auth/login', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: credential, password })
-        });
-      } else {
-        login = await fetch('/api/auth/login', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey: credential })
-        });
-      }
-      if (!login.ok) throw new Error('Invalid login credentials.');
-    })().finally(() => { authenticationPromise = null; });
+    authenticationPromise = new Promise((resolve) => {
+      openLoginScreen();
+      $('loginForm').onsubmit = async (event) => {
+        event.preventDefault();
+        const username = $('loginUsername').value.trim();
+        const password = $('loginPassword').value;
+        const apiKey = $('loginApiKey').value.trim();
+        if ((loginMode === 'account' && (!username || !password)) || (loginMode === 'key' && !apiKey)) {
+          $('loginMessage').textContent = loginMode === 'key' ? 'Enter your server access key.' : 'Enter both your username and password.';
+          return;
+        }
+        const submit = $('loginSubmit');
+        submit.disabled = true;
+        submit.classList.add('loading');
+        $('loginMessage').textContent = '';
+        try {
+          const login = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginMode === 'key' ? { apiKey } : { username, password })
+          });
+          const result = await login.json().catch(() => ({}));
+          if (!login.ok) throw new Error(result.message || 'Invalid login credentials.');
+          closeLoginScreen();
+          resolve(result);
+        } catch (error) {
+          $('loginMessage').textContent = error.message || 'Unable to sign in. Please try again.';
+        } finally {
+          submit.disabled = false;
+          submit.classList.remove('loading');
+        }
+      };
+    }).finally(() => { authenticationPromise = null; });
   }
   return authenticationPromise;
 }
@@ -1561,6 +1613,9 @@ async function loadAll() {
 }
 
 function boot() {
+  document.querySelectorAll('[data-login-mode]').forEach((button) => button.addEventListener('click', () => setLoginMode(button.dataset.loginMode)));
+  $('toggleLoginPassword').addEventListener('click', () => setSecretVisibility('loginPassword', 'toggleLoginPassword'));
+  $('toggleLoginApiKey').addEventListener('click', () => setSecretVisibility('loginApiKey', 'toggleLoginApiKey'));
   buildScheduleForm();
   const today = todayKey();
   $('timeCardFrom').value = today;
