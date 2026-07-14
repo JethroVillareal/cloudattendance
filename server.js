@@ -2763,7 +2763,7 @@ async function startServer() {
     throw new Error('CLOUD_MODE requires DATABASE_URL; ephemeral JSON/SQLite storage is not allowed.');
   }
   const localState = CLOUD_MODE
-    ? migrateDb(defaultDatabase())
+    ? migrateDb(emptyDb())
     : loadDb();
   const initialized = await storage.initialize(localState);
   if (initialized.state) saveDb(migrateDb(initialized.state));
