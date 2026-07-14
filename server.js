@@ -2419,14 +2419,14 @@ async function handleAttendanceReview(res, body) {
 
 function routeStatic(req, res, pathname) {
   const pageRoutes = {
-    '/': 'views/dashboard.html',
-    '/dashboard': 'views/dashboard.html',
-    '/timecard': 'views/timecard.html',
-    '/enrollment': 'views/enrollment.html',
-    '/employees': 'views/employees.html',
-    '/devices': 'views/devices.html',
-    '/settings': 'views/settings.html',
-    '/logs': 'views/logs.html'
+    '/': 'index.html',
+    '/dashboard': 'index.html',
+    '/timecard': 'index.html',
+    '/enrollment': 'index.html',
+    '/employees': 'index.html',
+    '/devices': 'index.html',
+    '/settings': 'index.html',
+    '/logs': 'index.html'
   };
   const relativePath = pageRoutes[pathname] || pathname.replace(/^\//, '');
   const filePath = path.join(PUBLIC_DIR, relativePath);

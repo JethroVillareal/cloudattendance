@@ -1625,7 +1625,16 @@ function boot() {
   $('manualDate').value = today;
   $('emergencyDateTime').value = new Date().toISOString().slice(0, 16);
   setSettingsForm();
-  setActiveView(new URLSearchParams(window.location.search).get('view') || 'dashboardView');
+  const pathViews = {
+    '/dashboard': 'dashboardView',
+    '/timecard': 'timeCardView',
+    '/enrollment': 'enrollmentView',
+    '/employees': 'employeesView',
+    '/devices': 'devicesView',
+    '/settings': 'settingsView',
+    '/logs': 'logsView'
+  };
+  setActiveView(new URLSearchParams(window.location.search).get('view') || pathViews[window.location.pathname] || 'dashboardView');
   setTimeCardTab('recordsTab');
 
   document.querySelectorAll('.nav-item').forEach((button) => {
