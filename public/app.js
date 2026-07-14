@@ -195,7 +195,7 @@ async function authenticateBrowser() {
           });
           const result = await login.json().catch(() => ({}));
           if (!login.ok) throw new Error(result.message || 'Invalid login credentials.');
-          closeLoginScreen();
+          window.location.assign('/dashboard');
           resolve(result);
         } catch (error) {
           $('loginMessage').textContent = error.message || 'Unable to sign in. Please try again.';
@@ -1625,16 +1625,7 @@ function boot() {
   $('manualDate').value = today;
   $('emergencyDateTime').value = new Date().toISOString().slice(0, 16);
   setSettingsForm();
-  const pathViews = {
-    '/dashboard': 'dashboardView',
-    '/timecard': 'timeCardView',
-    '/enrollment': 'enrollmentView',
-    '/employees': 'employeesView',
-    '/devices': 'devicesView',
-    '/settings': 'settingsView',
-    '/logs': 'logsView'
-  };
-  setActiveView(new URLSearchParams(window.location.search).get('view') || pathViews[window.location.pathname] || 'dashboardView');
+  setActiveView(new URLSearchParams(window.location.search).get('view') || 'dashboardView');
   setTimeCardTab('recordsTab');
 
   document.querySelectorAll('.nav-item').forEach((button) => {

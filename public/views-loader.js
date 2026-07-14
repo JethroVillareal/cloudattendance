@@ -25,7 +25,7 @@ async function loadViews() {
     container.innerHTML = views.join('\n');
 
     const appScript = document.createElement('script');
-    appScript.src = '/app.js?v=20260715-login2';
+    appScript.src = '/app.js';
     document.body.appendChild(appScript);
   } catch (error) {
     console.error(error);
