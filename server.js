@@ -68,6 +68,7 @@ const AUDIT_FILE = path.join(DATA_DIR, 'audit.jsonl');
 
 const sessions = new Map();
 const rateBuckets = new Map();
+let cloudDb = null;
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -342,6 +343,9 @@ function migrateDb(db) {
 }
 
 function loadDb() {
+  if (CLOUD_MODE && cloudDb) {
+    return migrateDb(JSON.parse(JSON.stringify(cloudDb)));
+  }
   ensureDbFile();
 
   try {
@@ -374,7 +378,9 @@ function saveDb(db) {
   db.meta = db.meta || {};
   db.meta.updatedAt = nowIso();
   db.meta.schemaVersion = SCHEMA_VERSION;
-  if (!CLOUD_MODE) {
+  if (CLOUD_MODE) {
+    cloudDb = JSON.parse(JSON.stringify(db));
+  } else {
     ensureDbFile();
     const tempFile = DB_FILE + '.tmp';
     fs.writeFileSync(tempFile, JSON.stringify(db, null, 2));
