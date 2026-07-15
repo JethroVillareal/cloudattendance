@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const { createClient } = require('@supabase/supabase-js');
 
 function loadEnvironmentFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -49,6 +50,12 @@ const DEVICE_API_KEYS = new Map(String(process.env.DEVICE_API_KEYS || '').split(
 }).filter(([deviceId, key]) => deviceId && key));
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean);
 const SCHEMA_VERSION = 5;
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
+const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const SUPABASE_EMPLOYEE_PHOTOS_BUCKET = String(process.env.SUPABASE_EMPLOYEE_PHOTOS_BUCKET || 'employee-photos').trim();
+const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  : null;
 
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
@@ -974,6 +981,7 @@ function safePublicEmployee(employee) {
     id: employee.id,
     employeeCode: employee.employeeCode || String(employee.id || '').slice(-8),
     fullName: employee.fullName,
+    photoUrl: employee.photoUrl || '',
     fingerprintId: employee.fingerprintId,
     fingerprints: activeEmployeeFingerprints(employee),
     shiftStart: employee.shiftStart || weeklySchedule.monday.timeIn,
@@ -984,6 +992,36 @@ function safePublicEmployee(employee) {
     createdAt: employee.createdAt,
     updatedAt: employee.updatedAt
   };
+}
+
+async function handleEmployeePhotoUpload(res, employeeId, body) {
+  const db = loadDb();
+  const employee = db.employees.find((item) => item.id === employeeId);
+  if (!employee) return sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee not found.' });
+  if (!supabase) return sendJson(res, 503, {
+    code: 'SUPABASE_STORAGE_NOT_CONFIGURED',
+    message: 'Employee photo storage is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.'
+  });
+
+  const match = String(body.dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) return sendJson(res, 400, { code: 'INVALID_EMPLOYEE_PHOTO', message: 'Use a JPG, PNG, or WebP employee photo.' });
+  const bytes = Buffer.from(match[2], 'base64');
+  if (!bytes.length || bytes.length > 750 * 1024) return sendJson(res, 413, { code: 'EMPLOYEE_PHOTO_TOO_LARGE', message: 'Employee photo must be 750 KB or smaller after resizing.' });
+
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[match[1]];
+  const objectPath = `${employee.id}/profile-${Date.now()}.${extension}`;
+  const bucket = supabase.storage.from(SUPABASE_EMPLOYEE_PHOTOS_BUCKET);
+  const uploaded = await bucket.upload(objectPath, bytes, { contentType: match[1], cacheControl: '3600', upsert: false });
+  if (uploaded.error) return sendJson(res, 502, { code: 'SUPABASE_PHOTO_UPLOAD_FAILED', message: uploaded.error.message });
+
+  const publicUrl = bucket.getPublicUrl(objectPath).data.publicUrl;
+  const previousPath = employee.photoStoragePath || '';
+  employee.photoUrl = publicUrl;
+  employee.photoStoragePath = objectPath;
+  employee.updatedAt = nowIso();
+  saveDb(db);
+  if (previousPath) bucket.remove([previousPath]).catch(() => {});
+  sendJson(res, 200, { employee: safePublicEmployee(employee), photoUrl: publicUrl });
 }
 
 function buildRecordDeviceDisplay(record, employee) {
@@ -1837,6 +1875,7 @@ function employeePayload(body, existing = null, settings = defaultSettings()) {
 
   return {
     fullName,
+    photoUrl: cleanDisplayText(body.photoUrl ?? existing?.photoUrl ?? '', 1000),
     employeeCode: cleanDisplayText(body.employeeCode || existing?.employeeCode || '', 40),
     fingerprintId,
     allowNoFingerprint,
@@ -1868,6 +1907,7 @@ async function handleCreateEmployee(res, body) {
     id: employeeId,
     employeeCode: payload.employeeCode || employeeId.slice(-8),
     fullName: payload.fullName,
+    photoUrl: payload.photoUrl,
     fingerprintId: payload.fingerprintId || null,
     fingerprints: payload.fingerprintId
       ? [normalizeFingerprintRecord({ label: payload.fingerprintLabel, deviceId: payload.deviceId }, payload.fingerprintId, payload.deviceId)]
@@ -1912,6 +1952,7 @@ async function handleUpdateEmployee(res, employeeId, body) {
 
   const monday = payload.weeklySchedule.monday;
   employee.fullName = payload.fullName;
+  employee.photoUrl = payload.photoUrl;
   employee.employeeCode = payload.employeeCode || employee.employeeCode;
   if (payload.fingerprintId) {
     employee.fingerprintId = payload.fingerprintId;
@@ -2668,6 +2709,12 @@ async function handleRequest(req, res) {
     if (method === 'POST' && /^\/api\/employees\/[^/]+\/fingerprints$/.test(pathname)) {
       const employeeId = decodeURIComponent(pathname.split('/')[3]);
       await handleAddEmployeeFingerprint(res, employeeId, await readBody(req));
+      return;
+    }
+
+    if (method === 'POST' && /^\/api\/employees\/[^/]+\/photo$/.test(pathname)) {
+      const employeeId = decodeURIComponent(pathname.split('/')[3]);
+      await handleEmployeePhotoUpload(res, employeeId, await readBody(req));
       return;
     }
 

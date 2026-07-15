@@ -13,6 +13,9 @@ of silently writing records to Render's ephemeral filesystem.
    deployment host requires IPv4.
 4. Replace the password placeholder in that URI with the database password.
 5. Keep the complete URI private. It becomes Render's `DATABASE_URL`.
+6. Open **Storage**, create a public bucket named `employee-photos`, then copy
+   the project URL and service-role key from **Project Settings > API**. The
+   service-role key belongs only on the server and is required for photo uploads.
 
 Tables are created automatically during the first successful server startup.
 If `app_state` is empty, the tracked `data/db.json` is imported once. Later
@@ -31,9 +34,13 @@ ESP32 sketch can contain Wi-Fi and device credentials.
 2. Render reads `render.yaml` and asks for each `sync: false` value.
 3. Enter these required secrets:
    - `DATABASE_URL`: Supabase Session pooler URI
+   - `SUPABASE_URL`: project URL such as `https://PROJECT-REF.supabase.co`
+   - `SUPABASE_SERVICE_ROLE_KEY`: server-only key used for Storage uploads
    - `API_KEY`: the same device/server key used by the ESP32, at least 16 chars
    - `ADMIN_PASSWORD`: dashboard administrator password
    - `EMERGENCY_ATTENDANCE_PASSWORD`: separate emergency-operation password
+   The Blueprint already sets `SUPABASE_EMPLOYEE_PHOTOS_BUCKET` to
+   `employee-photos`.
 4. Optional credentials may be left blank if those roles are not needed.
 5. Wait until `/health` reports `storage.activePrimary: postgresql` and
    `storage.postgresql: connected`.

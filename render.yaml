@@ -23,6 +23,12 @@ services:
         value: Asia/Manila
       - key: DATABASE_URL
         sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_EMPLOYEE_PHOTOS_BUCKET
+        value: employee-photos
       - key: API_KEY
         sync: false
       - key: EMERGENCY_ATTENDANCE_PASSWORD

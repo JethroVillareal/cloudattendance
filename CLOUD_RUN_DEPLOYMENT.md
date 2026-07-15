@@ -40,6 +40,8 @@ SQLITE_BACKUP_ENABLED=false
 PGSSL=true
 TRUST_PROXY=true
 DEVICE_TIMEZONE=Asia/Manila
+SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+SUPABASE_EMPLOYEE_PHOTOS_BUCKET=employee-photos
 ```
 
 8. Add these as Secret Manager-backed environment variables:
@@ -49,6 +51,7 @@ DATABASE_URL
 API_KEY
 ADMIN_PASSWORD
 EMERGENCY_ATTENDANCE_PASSWORD
+SUPABASE_SERVICE_ROLE_KEY
 ```
 
 Add `ADMIN_USERNAME=admin` as a normal environment variable. Add HR, Viewer,

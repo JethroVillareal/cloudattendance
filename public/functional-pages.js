@@ -597,9 +597,9 @@
     'shawn kyle cabangis': '/images/employees/shawn-kyle-cabangis.jpg'
   };
   const employeeAvatar = (employee) => {
-    const photo = employeeProfilePhotos[String(employee.fullName || '').trim().toLowerCase()];
+    const photo = employee.photoUrl || employeeProfilePhotos[String(employee.fullName || '').trim().toLowerCase()];
     const initials = String(employee.fullName || '?').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
-    return photo ? `<img src="${photo}" alt="${esc(employee.fullName)} profile photo" loading="lazy">` : `<span>${esc(initials)}</span>`;
+    return photo ? `<img src="${esc(photo)}" alt="${esc(employee.fullName)} profile photo" loading="lazy">` : `<span>${esc(initials)}</span>`;
   };
   const employeeIdentity = (employee, options = {}) => {
     const active = employee?.active !== false;
@@ -668,7 +668,8 @@
     popup.classList.toggle('time-out', isOut);
     popup.classList.toggle('demo', demo);
     const occurredAt = new Date(record.timestamp || record.createdAt || Date.now());
-    if ($('livePopupAvatar')) $('livePopupAvatar').innerHTML = employeeAvatar({ fullName: name });
+    const popupEmployee = liveEmployeeRecords?.find((employee) => employee.id === record.employeeId);
+    if ($('livePopupAvatar')) $('livePopupAvatar').innerHTML = employeeAvatar(popupEmployee || { fullName: name, photoUrl: record.photoUrl });
     if ($('livePopupName')) $('livePopupName').textContent = name;
     if ($('livePopupType')) $('livePopupType').textContent = type;
     if ($('livePopupHeadline')) $('livePopupHeadline').textContent = isEmergency ? 'Emergency attendance recorded' : isLate ? 'Attendance recorded with warning' : isOut ? 'Time out recorded successfully' : 'Scan recorded successfully';
@@ -747,6 +748,7 @@
       </section>
       <label><span>Employee ID</span><input id="newEmployeeCode" type="text" value="${esc(employee?.employeeCode || (employee?.id ? employee.id.slice(-8) : 'Auto-generated after save'))}" readonly aria-readonly="true"><small>The server automatically assigns a unique 8-character Employee ID.</small></label>
       <label><span>Full Name</span><input id="newFullName" type="text" placeholder="e.g. Juan Dela Cruz" value="${esc(employee?.fullName || '')}" required></label>
+      <label><span>Profile Picture</span><input id="newEmployeePhoto" type="file" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG, or WebP. The picture is resized before upload to Supabase Storage.</small></label>
       <section class="employee-fingerprint-box">
         <div><span>Fingerprints</span><strong id="employeeFingerprintStatus">${linkedFingerprints.length ? `${linkedFingerprints.length} linked finger${linkedFingerprints.length === 1 ? '' : 's'}` : 'No fingerprint linked'}</strong></div>
         <div class="employee-fingerprint-list" id="employeeFingerprintList">${linkedFingerprints.length ? linkedFingerprints.map((id, index) => `<span class="employee-fingerprint-chip ${index === 0 ? 'primary' : ''}"><i data-lucide="fingerprint"></i>ID ${id}${index === 0 ? '<small>Primary</small>' : ''}</span>`).join('') : '<span class="employee-fingerprint-empty">Scan a finger to add it here.</span>'}</div>
@@ -1089,6 +1091,7 @@
       graceMinutes: 10, active: $('newStatus')?.value !== 'Inactive'
     };
     try {
+      let savedEmployeeId = editingEmployeeId;
       if (editingEmployeeId) {
         for (const [index, fingerprintId] of employeeStagedFingerprints.entries()) {
           await api(`/api/employees/${encodeURIComponent(editingEmployeeId)}/fingerprints`, {
@@ -1101,12 +1104,21 @@
         });
       } else {
         const saved = await api('/api/employees', { method: 'POST', body: JSON.stringify(payload) });
+        savedEmployeeId = saved.employee.id;
+        editingEmployeeId = savedEmployeeId;
         for (const [index, fingerprintId] of employeeStagedFingerprints.slice(1).entries()) {
           await api(`/api/employees/${encodeURIComponent(saved.employee.id)}/fingerprints`, {
           method: 'POST',
             body: JSON.stringify({ fingerprintId, label: `Additional Finger ${index + 2}`, deviceId: $('employeeScanDevice')?.value || '' })
           });
         }
+      }
+      const photoFile = $('newEmployeePhoto')?.files?.[0];
+      if (photoFile) {
+        const dataUrl = await resizeEmployeePhoto(photoFile);
+        await api(`/api/employees/${encodeURIComponent(savedEmployeeId)}/photo`, {
+          method: 'POST', body: JSON.stringify({ dataUrl })
+        });
       }
       toast(editingEmployeeId ? 'Employee changes saved.' : 'Employee saved to the server.');
       editingEmployeeId = null;
@@ -1115,6 +1127,28 @@
     } catch (error) {
       toast(error.message);
     }
+  }
+
+  function resizeEmployeePhoto(file) {
+    return new Promise((resolve, reject) => {
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return reject(new Error('Select a JPG, PNG, or WebP photo.'));
+      const image = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      image.onload = () => {
+        const size = 512;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const context = canvas.getContext('2d');
+        const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+        const sourceX = (image.naturalWidth - sourceSize) / 2;
+        const sourceY = (image.naturalHeight - sourceSize) / 2;
+        context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+        URL.revokeObjectURL(objectUrl);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not read the selected photo.')); };
+      image.src = objectUrl;
+    });
   }
 
   let enrollmentRecords = [];
