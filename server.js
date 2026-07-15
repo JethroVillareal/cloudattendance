@@ -1013,6 +1013,10 @@ function safePublicEmployee(employee) {
   };
 }
 
+function shouldRateLimitRequest(pathname, method) {
+  return String(pathname || '').startsWith('/api/') && String(method || '').toUpperCase() !== 'OPTIONS';
+}
+
 function roleHomePath(role) {
   if (role === 'employee') return '/employee';
   if (role === 'hr') return '/hr';
@@ -2704,7 +2708,8 @@ async function handleRequest(req, res) {
     return;
   }
 
-  if (!consumeRateLimit(`request:${requestIp(req)}`, REQUESTS_PER_MINUTE, 60 * 1000)) {
+  const rateLimitedApiRequest = shouldRateLimitRequest(pathname, method);
+  if (rateLimitedApiRequest && !consumeRateLimit(`request:${requestIp(req)}`, REQUESTS_PER_MINUTE, 60 * 1000)) {
     res.setHeader('Retry-After', '60');
     sendJson(res, 429, { code: 'RATE_LIMITED', message: 'Too many requests. Try again shortly.' });
     return;
@@ -3055,5 +3060,6 @@ module.exports = {
   isRecordedAttendanceLog,
   normalizeSettings,
   consumeRateLimit,
+  shouldRateLimitRequest,
   securityHeaders
 };
