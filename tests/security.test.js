@@ -13,6 +13,7 @@ const {
   isRecordedAttendanceLog,
   normalizeSettings,
   consumeRateLimit,
+  shouldRateLimitRequest,
   securityHeaders
 } = require('../server');
 
@@ -78,6 +79,15 @@ test('rate limiter blocks requests beyond the configured window limit', () => {
   assert.equal(consumeRateLimit(key, 2, 60000), true);
   assert.equal(consumeRateLimit(key, 2, 60000), true);
   assert.equal(consumeRateLimit(key, 2, 60000), false);
+});
+
+test('global request limiter counts APIs but not dashboard assets or health checks', () => {
+  assert.equal(shouldRateLimitRequest('/api/employees', 'GET'), true);
+  assert.equal(shouldRateLimitRequest('/api/auth/login', 'POST'), true);
+  assert.equal(shouldRateLimitRequest('/dashboard', 'GET'), false);
+  assert.equal(shouldRateLimitRequest('/icons/accounts.svg', 'GET'), false);
+  assert.equal(shouldRateLimitRequest('/health', 'GET'), false);
+  assert.equal(shouldRateLimitRequest('/api/employees', 'OPTIONS'), false);
 });
 
 test('security headers deny framing and MIME sniffing', () => {
