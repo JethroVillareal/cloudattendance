@@ -83,7 +83,7 @@
       ['Time Card', '/timecard', 'timecard.svg'],
       ['Enrollment', '/enrollment', 'fingerprint.svg'],
       ['Employees', '/employees', 'employee.svg'],
-      ['Employee Accounts', '/accounts', 'employee.svg'],
+      ['Employee Accounts', '/accounts', 'accounts.svg'],
       ['Devices', '/devices', 'device.svg'],
       ['Settings', '/settings', 'settings.svg'],
       ['Logs', '/logs', 'logs.svg']
