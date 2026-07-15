@@ -12,7 +12,7 @@
     "db:postgres:restore:validate": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restore-postgres.ps1"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.12.2",
+    "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.5",
     "pg": "^8.16.3"
   }

@@ -28,6 +28,7 @@ const state = {
   pending: [],
   employees: [],
   attendance: [],
+  departments: [], designations: [], leaveRequests: [], correctionRequests: [], notifications: [],
   timeCards: [],
   modalFingerprintId: null,
   editingEmployeeId: null,
@@ -204,7 +205,7 @@ async function authenticateBrowser() {
           }
           $('loginMessage').classList.add('success');
           $('loginMessage').textContent = 'Signed in. Opening your dashboard...';
-          window.location.assign('/dashboard');
+          window.location.assign(result.redirectTo || '/dashboard');
           resolve(result);
         } catch (error) {
           $('loginMessage').classList.remove('success');
@@ -272,7 +273,8 @@ const viewMeta = {
   employeesView: ['Employees', 'Manage employee profiles, schedules, and fingerprints'],
   devicesView: ['Devices', 'Manage attendance devices and their connectivity'],
   settingsView: ['Settings', 'Configure attendance rules and system preferences'],
-  logsView: ['Logs', 'View system activities and attendance events']
+  logsView: ['Logs', 'View system activities and attendance events'],
+  workforceView: ['Workforce', 'Departments, designations, leave, corrections and notifications']
 };
 
 function setActiveView(viewId) {
@@ -349,6 +351,41 @@ function renderDashboardLists() {
       <td>${escapeHtml(record.message || '')}</td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="muted">No recent activity.</td></tr>';
+}
+
+function renderWorkforce() {
+  if (!$('workforceView')) return;
+  $('departmentList').innerHTML = state.departments.length ? state.departments.map((item) => `<div><strong>${escapeHtml(item.name)}</strong><span>${item.active ? 'Active' : 'Inactive'}</span></div>`).join('') : '<div>No departments yet.</div>';
+  $('designationList').innerHTML = state.designations.length ? state.designations.map((item) => `<div><strong>${escapeHtml(item.name)}</strong><span>${item.active ? 'Active' : 'Inactive'}</span></div>`).join('') : '<div>No designations yet.</div>';
+  const employeeOptions = '<option value="">Select employee</option>' + state.employees.map((employee) => `<option value="${escapeHtml(employee.id)}">${escapeHtml(employee.fullName)}</option>`).join('');
+  $('leaveEmployee').innerHTML = employeeOptions; $('correctionEmployee').innerHTML = employeeOptions;
+  const requests = [...state.leaveRequests.map((item) => ({ ...item, kind: 'leave' })), ...state.correctionRequests.map((item) => ({ ...item, kind: 'correction' }))].sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  $('workflowQueue').innerHTML = requests.length ? requests.map((item) => `<div class="workflow-row"><div><strong>${escapeHtml(item.employeeName)}</strong><div>${item.kind === 'leave' ? `${escapeHtml(item.leaveType)} · ${escapeHtml(item.fromDate)} to ${escapeHtml(item.toDate)}` : `Attendance correction · ${escapeHtml(item.dateKey)}`}</div></div><span class="workflow-status">${escapeHtml(item.status)}</span>${item.status === 'PENDING' ? `<div class="workflow-actions"><button data-review-kind="${item.kind}" data-review-id="${escapeHtml(item.id)}" data-review-status="APPROVED">Approve</button><button data-review-kind="${item.kind}" data-review-id="${escapeHtml(item.id)}" data-review-status="REJECTED">Reject</button></div>` : ''}</div>`).join('') : '<div class="empty">No requests yet.</div>';
+  $('notificationList').innerHTML = state.notifications.length ? state.notifications.slice(0, 20).map((item) => `<div><span><strong>${escapeHtml(item.title)}</strong><br>${escapeHtml(item.message)}</span><small>${escapeHtml(formatDateTime(item.createdAt))}</small></div>`).join('') : '<div>No notifications yet.</div>';
+}
+
+async function loadWorkforce() {
+  const [departments, designations, leaves, corrections, notifications] = await Promise.all([api('/api/departments'), api('/api/designations'), api('/api/leave-requests'), api('/api/correction-requests'), api('/api/notifications')]);
+  state.departments = departments.departments || []; state.designations = designations.designations || []; state.leaveRequests = leaves.leaveRequests || []; state.correctionRequests = corrections.correctionRequests || []; state.notifications = notifications.notifications || []; renderWorkforce();
+}
+
+async function submitDirectory(event, type) {
+  event.preventDefault(); const input = $(type === 'departments' ? 'departmentName' : 'designationName');
+  await api(`/api/${type}`, { method: 'POST', body: JSON.stringify({ name: input.value }) }); input.value = ''; await loadWorkforce();
+}
+
+async function submitLeaveRequest(event) {
+  event.preventDefault(); await api('/api/leave-requests', { method: 'POST', body: JSON.stringify({ employeeId: $('leaveEmployee').value, leaveType: $('leaveType').value, fromDate: $('leaveFrom').value, toDate: $('leaveTo').value, reason: $('leaveReason').value }) }); event.target.reset(); await loadWorkforce();
+}
+
+async function submitCorrectionRequest(event) {
+  event.preventDefault(); await api('/api/correction-requests', { method: 'POST', body: JSON.stringify({ employeeId: $('correctionEmployee').value, dateKey: $('correctionDate').value, requestedTimeIn: $('correctionTimeIn').value, requestedTimeOut: $('correctionTimeOut').value, reason: $('correctionReason').value }) }); event.target.reset(); await loadWorkforce();
+}
+
+async function reviewWorkflow(event) {
+  const button = event.target.closest('[data-review-id]'); if (!button) return;
+  const base = button.dataset.reviewKind === 'leave' ? 'leave-requests' : 'correction-requests';
+  await api(`/api/${base}/${encodeURIComponent(button.dataset.reviewId)}/review`, { method: 'PATCH', body: JSON.stringify({ status: button.dataset.reviewStatus }) }); await loadWorkforce();
 }
 
 function buildScheduleForm() {
@@ -1613,6 +1650,7 @@ async function loadAll() {
     renderEmployees();
     renderAttendance();
     await loadTimeCard();
+    await loadWorkforce();
 
     if (hadNoPending && state.pending.length > 0 && $('modalBackdrop').classList.contains('hidden')) {
       openRegisterModal(state.pending[0].fingerprintId);
@@ -1648,6 +1686,11 @@ function boot() {
     button.addEventListener('click', () => setTimeCardTab(button.dataset.timecardTab));
   });
   $('refreshBtn').addEventListener('click', loadAll);
+  $('departmentForm')?.addEventListener('submit', (event) => submitDirectory(event, 'departments').catch((error) => alert(error.message)));
+  $('designationForm')?.addEventListener('submit', (event) => submitDirectory(event, 'designations').catch((error) => alert(error.message)));
+  $('leaveRequestForm')?.addEventListener('submit', (event) => submitLeaveRequest(event).catch((error) => alert(error.message)));
+  $('correctionRequestForm')?.addEventListener('submit', (event) => submitCorrectionRequest(event).catch((error) => alert(error.message)));
+  $('workflowQueue')?.addEventListener('click', (event) => reviewWorkflow(event).catch((error) => alert(error.message)));
   $('createEmployeeBtn').addEventListener('click', openCreateEmployeeModal);
   $('startEnrollmentBtn').addEventListener('click', startEnrollment);
   $('loadTimeCardBtn').addEventListener('click', loadTimeCard);

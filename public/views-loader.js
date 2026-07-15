@@ -5,7 +5,8 @@ const viewFiles = [
   'employees',
   'devices',
   'settings',
-  'logs'
+  'logs',
+  'workforce'
 ];
 
 async function loadViews() {

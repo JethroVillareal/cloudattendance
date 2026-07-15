@@ -9,6 +9,7 @@ const {
   isPublicApi,
   deviceRoute,
   roleCanAccess,
+  roleHomePath,
   isRecordedAttendanceLog,
   normalizeSettings,
   consumeRateLimit,
@@ -31,6 +32,24 @@ test('role permissions keep devices and viewers away from administration', () =>
   assert.equal(roleCanAccess('hr', '/api/attendance/review', 'POST'), true);
   assert.equal(roleCanAccess('hr', '/api/settings', 'POST'), false);
   assert.equal(roleCanAccess('admin', '/api/settings', 'POST'), true);
+  assert.equal(roleCanAccess('admin', '/api/employee-accounts', 'POST'), true);
+  assert.equal(roleCanAccess('hr', '/api/employee-accounts', 'GET'), false);
+  assert.equal(roleCanAccess('viewer', '/api/employee-accounts', 'GET'), false);
+});
+
+test('employee role is restricted to its own employee API surface', () => {
+  assert.equal(roleCanAccess('employee', '/api/employee/home', 'GET'), true);
+  assert.equal(roleCanAccess('employee', '/api/employee/leave-requests', 'POST'), true);
+  assert.equal(roleCanAccess('employee', '/api/employees', 'GET'), false);
+  assert.equal(roleCanAccess('employee', '/api/timecard', 'GET'), false);
+  assert.equal(roleCanAccess('employee', '/api/employee/home', 'DELETE'), false);
+});
+
+test('each account role opens the correct workspace', () => {
+  assert.equal(roleHomePath('employee'), '/employee');
+  assert.equal(roleHomePath('hr'), '/hr');
+  assert.equal(roleHomePath('admin'), '/dashboard');
+  assert.equal(roleHomePath('viewer'), '/dashboard');
 });
 
 test('only accepted time in and time out rows count as attendance', () => {

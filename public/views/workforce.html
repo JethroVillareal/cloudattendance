@@ -1,0 +1,17 @@
+<section id="workforceView" class="view workforce-view">
+  <div class="workforce-grid">
+    <article class="panel workforce-card"><h2>Organization</h2><p>Maintain reusable departments and designations.</p>
+      <form id="departmentForm" class="workforce-form"><input id="departmentName" required maxlength="80" placeholder="Department name"><button type="submit">Add department</button></form><div id="departmentList" class="workforce-list"></div>
+      <form id="designationForm" class="workforce-form"><input id="designationName" required maxlength="80" placeholder="Designation name"><button type="submit">Add designation</button></form><div id="designationList" class="workforce-list"></div>
+    </article>
+    <article class="panel workforce-card"><h2>New leave request</h2><form id="leaveRequestForm" class="workforce-stack">
+      <select id="leaveEmployee" required></select><select id="leaveType"><option>VACATION</option><option>SICK</option><option>EMERGENCY</option></select>
+      <div class="workforce-form"><input id="leaveFrom" type="date" required><input id="leaveTo" type="date" required></div><textarea id="leaveReason" maxlength="240" placeholder="Reason"></textarea><button type="submit">Submit request</button>
+    </form></article>
+    <article class="panel workforce-card"><h2>New correction request</h2><form id="correctionRequestForm" class="workforce-stack">
+      <select id="correctionEmployee" required></select><input id="correctionDate" type="date" required><div class="workforce-form"><input id="correctionTimeIn" type="time"><input id="correctionTimeOut" type="time"></div><textarea id="correctionReason" required maxlength="240" placeholder="Explain what needs correction"></textarea><button type="submit">Submit correction</button>
+    </form></article>
+  </div>
+  <article class="panel workforce-card"><h2>Request review queue</h2><div id="workflowQueue" class="workforce-queue"></div></article>
+  <article class="panel workforce-card"><h2>Notifications</h2><div id="notificationList" class="workforce-list"></div></article>
+</section>

@@ -44,12 +44,16 @@ const ROLE_CREDENTIALS = [
   ['hr', process.env.HR_USERNAME, process.env.HR_PASSWORD],
   ['viewer', process.env.VIEWER_USERNAME, process.env.VIEWER_PASSWORD]
 ].filter(([, username, password]) => username && password).map(([role, username, password]) => ({ role, username: String(username), password: String(password) }));
+const EMPLOYEE_ACCOUNTS = String(process.env.EMPLOYEE_ACCOUNTS || '').split(',').map((entry) => {
+  const [username, password, employeeId] = entry.split('|').map((value) => String(value || '').trim());
+  return username && password && employeeId ? { role: 'employee', username, password, employeeId } : null;
+}).filter(Boolean);
 const DEVICE_API_KEYS = new Map(String(process.env.DEVICE_API_KEYS || '').split(',').map((entry) => {
   const separator = entry.indexOf(':');
   return separator > 0 ? [entry.slice(0, separator).trim(), entry.slice(separator + 1).trim()] : ['', ''];
 }).filter(([deviceId, key]) => deviceId && key));
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean);
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 7;
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const SUPABASE_EMPLOYEE_PHOTOS_BUCKET = String(process.env.SUPABASE_EMPLOYEE_PHOTOS_BUCKET || 'employee-photos').trim();
@@ -64,7 +68,6 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const DATA_DIR = path.join(ROOT_DIR, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
-const AUDIT_FILE = path.join(DATA_DIR, 'audit.jsonl');
 
 const sessions = new Map();
 const rateBuckets = new Map();
@@ -118,6 +121,12 @@ function emptyDb() {
     readers: [],
     displayCommands: [],
     manualStatuses: [],
+    departments: [],
+    designations: [],
+    leaveRequests: [],
+    correctionRequests: [],
+    notifications: [],
+    employeeAccounts: [],
     settings: defaultSettings(),
     meta: {
       createdAt: nowIso(),
@@ -318,6 +327,22 @@ function migrateDb(db) {
   db.readers = Array.isArray(db.readers) ? db.readers : [];
   db.displayCommands = Array.isArray(db.displayCommands) ? db.displayCommands : [];
   db.manualStatuses = Array.isArray(db.manualStatuses) ? db.manualStatuses : [];
+  db.departments = Array.isArray(db.departments) ? db.departments : [];
+  db.designations = Array.isArray(db.designations) ? db.designations : [];
+  db.leaveRequests = Array.isArray(db.leaveRequests) ? db.leaveRequests : [];
+  db.correctionRequests = Array.isArray(db.correctionRequests) ? db.correctionRequests : [];
+  db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
+  db.employeeAccounts = Array.isArray(db.employeeAccounts) ? db.employeeAccounts : [];
+  db.employeeAccounts = db.employeeAccounts.filter((account) => account && account.employeeId && account.username && account.passwordHash && account.passwordSalt).map((account) => ({
+    id: account.id || createId('account'),
+    employeeId: String(account.employeeId),
+    username: String(account.username).trim().toLowerCase(),
+    passwordHash: String(account.passwordHash),
+    passwordSalt: String(account.passwordSalt),
+    active: account.active !== false,
+    createdAt: account.createdAt || nowIso(),
+    updatedAt: account.updatedAt || nowIso()
+  }));
   db.settings = normalizeSettings(db.settings);
   db.meta = db.meta || {};
   db.meta.schemaVersion = Math.max(Number(db.meta.schemaVersion || 0), SCHEMA_VERSION);
@@ -346,6 +371,7 @@ function loadDb() {
   if (CLOUD_MODE && cloudDb) {
     return migrateDb(JSON.parse(JSON.stringify(cloudDb)));
   }
+
   ensureDbFile();
 
   try {
@@ -508,6 +534,15 @@ function safeEqual(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function hashAccountPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  return { passwordSalt: salt, passwordHash: crypto.scryptSync(String(password), salt, 64).toString('hex') };
+}
+
+function verifyAccountPassword(password, account) {
+  if (!account?.passwordHash || !account?.passwordSalt) return false;
+  return safeEqual(crypto.scryptSync(String(password), account.passwordSalt, 64).toString('hex'), account.passwordHash);
+}
+
 function parseCookies(req) {
   return Object.fromEntries(String(getHeader(req, 'cookie') || '').split(';').map((part) => {
     const index = part.indexOf('=');
@@ -561,13 +596,18 @@ function deviceRoute(pathname, method) {
 
 function roleCanAccess(role, pathname, method) {
   if (role === 'admin') return true;
+  if (pathname.startsWith('/api/employee-accounts')) return false;
   if (role === 'device') return deviceRoute(pathname, method);
   if (role === 'viewer') return method === 'GET' && !['/api/export/db', '/api/audit'].includes(pathname);
+  if (role === 'employee') return pathname.startsWith('/api/employee/') && ['GET', 'POST', 'PATCH'].includes(method);
   if (role === 'hr') {
     if (method === 'GET') return pathname !== '/api/export/db';
     return pathname.startsWith('/api/employees') || pathname.startsWith('/api/fingerprints') ||
       pathname.startsWith('/api/time-card') || pathname.startsWith('/api/timecard') ||
-      pathname === '/api/attendance/review' || pathname === '/api/admin/emergency-attendance';
+      pathname === '/api/attendance/review' || pathname === '/api/admin/emergency-attendance' ||
+      pathname.startsWith('/api/departments') || pathname.startsWith('/api/designations') ||
+      pathname.startsWith('/api/leave-requests') || pathname.startsWith('/api/correction-requests') ||
+      pathname.startsWith('/api/notifications');
   }
   return false;
 }
@@ -581,38 +621,6 @@ function consumeRateLimit(key, limit, windowMs) {
   }
   current.count += 1;
   return current.count <= limit;
-}
-
-function auditRequest(req, pathname, method, status) {
-  if (!['POST', 'PATCH', 'DELETE'].includes(method) || pathname === '/api/auth/login') return;
-  const record = {
-    id: createId('audit'), at: nowIso(), method, pathname, status,
-    actor: req.auth?.username || 'unauthenticated', role: req.auth?.role || '',
-    ip: requestIp(req), userAgent: cleanDisplayText(getHeader(req, 'user-agent') || '', 160)
-  };
-  storage.writeAudit(record).then((stored) => {
-    if (stored || CLOUD_MODE) return;
-    fs.appendFile(AUDIT_FILE, `${JSON.stringify(record)}\n`, (error) => {
-      if (error) console.error('Audit log write failed:', error.message);
-    });
-  }).catch((error) => console.error('Audit log write failed:', error.message));
-}
-
-async function handleAuditLog(res, url) {
-  const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') || 100)));
-  const databaseRecords = await storage.readAudit(limit);
-  if (databaseRecords) {
-    sendJson(res, 200, { audit: databaseRecords });
-    return;
-  }
-  if (!fs.existsSync(AUDIT_FILE)) {
-    sendJson(res, 200, { audit: [] });
-    return;
-  }
-  const records = fs.readFileSync(AUDIT_FILE, 'utf8').trim().split(/\r?\n/).filter(Boolean).slice(-limit).reverse().map((line) => {
-    try { return JSON.parse(line); } catch { return null; }
-  }).filter(Boolean);
-  sendJson(res, 200, { audit: records });
 }
 
 function parseFingerprintId(value) {
@@ -1003,6 +1011,73 @@ function safePublicEmployee(employee) {
     createdAt: employee.createdAt,
     updatedAt: employee.updatedAt
   };
+}
+
+function roleHomePath(role) {
+  if (role === 'employee') return '/employee';
+  if (role === 'hr') return '/hr';
+  return '/dashboard';
+}
+
+function normalizeWorkflowStatus(value, allowed, fallback = 'PENDING') {
+  const status = upperDisplayText(value || fallback, 24);
+  return allowed.includes(status) ? status : fallback;
+}
+
+function requireEmployee(db, employeeId) {
+  return db.employees.find((employee) => employee.id === String(employeeId || '')) || null;
+}
+
+function createNotification(db, input) {
+  const notification = {
+    id: createId('notification'), employeeId: String(input.employeeId || ''),
+    title: cleanDisplayText(input.title || 'Attendance update', 80),
+    message: cleanDisplayText(input.message || '', 240),
+    type: upperDisplayText(input.type || 'INFO', 24), readAt: null, createdAt: nowIso()
+  };
+  db.notifications.unshift(notification);
+  return notification;
+}
+
+async function handleCreateDirectoryRecord(res, collection, body) {
+  const db = loadDb();
+  const name = normalizeName(body.name);
+  if (!name) return sendJson(res, 400, { code: 'NAME_REQUIRED', message: 'Name is required.' });
+  if (db[collection].some((item) => item.name.toLowerCase() === name.toLowerCase())) return sendJson(res, 409, { code: 'DUPLICATE_NAME', message: `${name} already exists.` });
+  const prefix = collection === 'departments' ? 'department' : 'designation';
+  const record = { id: createId(prefix), name, description: cleanDisplayText(body.description || '', 160), active: body.active !== false, createdAt: nowIso(), updatedAt: nowIso() };
+  db[collection].push(record); saveDb(db);
+  sendJson(res, 201, { [prefix]: record });
+}
+
+async function handleCreateLeaveRequest(res, body, actor) {
+  const db = loadDb(); const employee = requireEmployee(db, body.employeeId);
+  const fromDate = String(body.fromDate || ''); const toDate = String(body.toDate || '');
+  if (!employee) return sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee was not found.' });
+  if (!dateKeyToUtcDate(fromDate) || !dateKeyToUtcDate(toDate) || fromDate > toDate) return sendJson(res, 400, { code: 'INVALID_DATE_RANGE', message: 'Enter a valid leave date range.' });
+  const request = { id: createId('leave'), employeeId: employee.id, employeeName: employee.fullName, leaveType: upperDisplayText(body.leaveType || 'VACATION', 32), fromDate, toDate, reason: cleanDisplayText(body.reason || '', 240), status: 'PENDING', requestedBy: actor.username, reviewedBy: '', reviewedAt: null, createdAt: nowIso(), updatedAt: nowIso() };
+  db.leaveRequests.unshift(request); createNotification(db, { employeeId: employee.id, type: 'LEAVE', title: 'Leave request submitted', message: `${fromDate} to ${toDate} is pending review.` }); saveDb(db);
+  sendJson(res, 201, { leaveRequest: request });
+}
+
+async function handleCreateCorrectionRequest(res, body, actor) {
+  const db = loadDb(); const employee = requireEmployee(db, body.employeeId); const dateKey = String(body.dateKey || '');
+  if (!employee) return sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee was not found.' });
+  if (!dateKeyToUtcDate(dateKey)) return sendJson(res, 400, { code: 'INVALID_DATE', message: 'Enter a valid attendance date.' });
+  const request = { id: createId('correction'), employeeId: employee.id, employeeName: employee.fullName, dateKey, requestedTimeIn: validTimeText(body.requestedTimeIn, ''), requestedTimeOut: validTimeText(body.requestedTimeOut, ''), reason: cleanDisplayText(body.reason || '', 240), status: 'PENDING', requestedBy: actor.username, reviewedBy: '', reviewedAt: null, createdAt: nowIso(), updatedAt: nowIso() };
+  db.correctionRequests.unshift(request); createNotification(db, { employeeId: employee.id, type: 'CORRECTION', title: 'Correction request submitted', message: `${dateKey} is pending review.` }); saveDb(db);
+  sendJson(res, 201, { correctionRequest: request });
+}
+
+async function handleReviewWorkflow(res, collection, requestId, body, actor) {
+  const db = loadDb(); const request = db[collection].find((item) => item.id === requestId);
+  if (!request) return sendJson(res, 404, { code: 'REQUEST_NOT_FOUND', message: 'Request was not found.' });
+  const status = normalizeWorkflowStatus(body.status, ['APPROVED', 'REJECTED'], '');
+  if (!status) return sendJson(res, 400, { code: 'INVALID_STATUS', message: 'Status must be APPROVED or REJECTED.' });
+  request.status = status; request.reviewRemarks = cleanDisplayText(body.remarks || '', 240); request.reviewedBy = actor.username; request.reviewedAt = nowIso(); request.updatedAt = request.reviewedAt;
+  const label = collection === 'leaveRequests' ? 'Leave' : 'Correction';
+  createNotification(db, { employeeId: request.employeeId, type: label.toUpperCase(), title: `${label} request ${status.toLowerCase()}`, message: request.reviewRemarks || `Your request is now ${status.toLowerCase()}.` }); saveDb(db);
+  sendJson(res, 200, { request });
 }
 
 async function handleEmployeePhotoUpload(res, employeeId, body) {
@@ -1886,7 +1961,6 @@ function employeePayload(body, existing = null, settings = defaultSettings()) {
 
   return {
     fullName,
-    photoUrl: cleanDisplayText(body.photoUrl ?? existing?.photoUrl ?? '', 1000),
     employeeCode: cleanDisplayText(body.employeeCode || existing?.employeeCode || '', 40),
     fingerprintId,
     allowNoFingerprint,
@@ -1918,7 +1992,7 @@ async function handleCreateEmployee(res, body) {
     id: employeeId,
     employeeCode: payload.employeeCode || employeeId.slice(-8),
     fullName: payload.fullName,
-    photoUrl: payload.photoUrl,
+    photoUrl: '',
     fingerprintId: payload.fingerprintId || null,
     fingerprints: payload.fingerprintId
       ? [normalizeFingerprintRecord({ label: payload.fingerprintLabel, deviceId: payload.deviceId }, payload.fingerprintId, payload.deviceId)]
@@ -1963,7 +2037,6 @@ async function handleUpdateEmployee(res, employeeId, body) {
 
   const monday = payload.weeklySchedule.monday;
   employee.fullName = payload.fullName;
-  employee.photoUrl = payload.photoUrl;
   employee.employeeCode = payload.employeeCode || employee.employeeCode;
   if (payload.fingerprintId) {
     employee.fingerprintId = payload.fingerprintId;
@@ -2253,6 +2326,24 @@ function handleTimeCard(res, url) {
   sendJson(res, 200, { timeCards, from: dateKeyFromUtcDate(fromDate), to: dateKeyFromUtcDate(toDate), settings: db.settings });
 }
 
+function buildPortalPayload(session, url) {
+  const db = loadDb();
+  const employee = requireEmployee(db, session.employeeId);
+  if (!employee || employee.active === false) return null;
+  const today = localDateKey(new Date());
+  const fromKey = url.searchParams.get('from') || dateKeyFromUtcDate(addDaysUtc(dateKeyToUtcDate(today), -30));
+  const toKey = url.searchParams.get('to') || today;
+  let fromDate = dateKeyToUtcDate(fromKey); let toDate = dateKeyToUtcDate(toKey);
+  if (!fromDate || !toDate) { fromDate = dateKeyToUtcDate(today); toDate = fromDate; }
+  if (fromDate > toDate) [fromDate, toDate] = [toDate, fromDate];
+  const timeCards = [];
+  for (let d = fromDate; d <= toDate; d = addDaysUtc(d, 1)) timeCards.push(buildTimeCardRecord(employee, dateKeyFromUtcDate(d), db.attendance, db.manualStatuses, db.settings));
+  const summary = timeCards.reduce((out, row) => {
+    out.present += /PRESENT|LATE/.test(row.status || '') ? 1 : 0; out.lateMinutes += Number(row.lateMinutes || 0); out.undertimeMinutes += Number(row.earlyOutMinutes || 0); out.overtimeMinutes += Number(row.overtimeMinutes || 0); return out;
+  }, { present: 0, lateMinutes: 0, undertimeMinutes: 0, overtimeMinutes: 0 });
+  return { employee: safePublicEmployee(employee), timeCards: timeCards.reverse(), summary, leaveRequests: db.leaveRequests.filter((item) => item.employeeId === employee.id), correctionRequests: db.correctionRequests.filter((item) => item.employeeId === employee.id), notifications: db.notifications.filter((item) => !item.employeeId || item.employeeId === employee.id).slice(0, 100), settings: { branchName: db.settings.branchName } };
+}
+
 function csvEscape(value) {
   const text = String(value ?? '');
   if (/[",\n\r]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
@@ -2476,12 +2567,28 @@ function routeStatic(req, res, pathname) {
     '/timecard': 'views/timecard.html',
     '/enrollment': 'views/enrollment.html',
     '/employees': 'views/employees.html',
+    '/accounts': 'views/accounts.html',
     '/devices': 'views/devices.html',
     '/settings': 'views/settings.html',
-    '/logs': 'views/logs.html'
+    '/logs': 'views/logs.html',
+    '/hr': 'hr/index.html',
+    '/employee': 'employee/index.html'
   };
   const requestedPage = pageRoutes[pathname];
-  const relativePath = requestedPage && !validSession(req)
+  const session = validSession(req);
+  if (requestedPage && session?.role === 'employee' && pathname !== '/employee') {
+    send(res, 302, '', { Location: '/employee' });
+    return true;
+  }
+  if (requestedPage && session?.role !== 'employee' && pathname === '/employee') {
+    send(res, 302, '', { Location: roleHomePath(session?.role) });
+    return true;
+  }
+  if (requestedPage && session?.role === 'hr' && pathname === '/accounts') {
+    send(res, 302, '', { Location: '/hr' });
+    return true;
+  }
+  const relativePath = requestedPage && !session
     ? 'index.html'
     : requestedPage || pathname.replace(/^\//, '');
   const filePath = path.join(PUBLIC_DIR, relativePath);
@@ -2504,6 +2611,46 @@ function isPublicApi(pathname, method) {
   return method === 'POST' && pathname === '/api/auth/login';
 }
 
+function publicEmployeeAccount(account, db) {
+  const employee = db.employees.find((item) => item.id === account.employeeId);
+  return { id: account.id, employeeId: account.employeeId, employeeName: employee?.fullName || 'Employee not found', employeeCode: employee?.employeeCode || '', username: account.username, active: account.active !== false, createdAt: account.createdAt, updatedAt: account.updatedAt };
+}
+
+function handleGetEmployeeAccounts(res) {
+  const db = loadDb();
+  sendJson(res, 200, { accounts: db.employeeAccounts.map((account) => publicEmployeeAccount(account, db)) });
+}
+
+async function handleSaveEmployeeAccount(res, body, accountId = '') {
+  const db = loadDb();
+  const existing = accountId ? db.employeeAccounts.find((item) => item.id === accountId) : null;
+  if (accountId && !existing) return sendJson(res, 404, { code: 'ACCOUNT_NOT_FOUND', message: 'Employee account not found.' });
+  const employeeId = String(body.employeeId || existing?.employeeId || '');
+  const username = String(body.username || existing?.username || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!db.employees.some((item) => item.id === employeeId)) return sendJson(res, 400, { code: 'EMPLOYEE_NOT_FOUND', message: 'Select a valid employee.' });
+  if (!/^[a-z0-9._-]{3,40}$/i.test(username)) return sendJson(res, 400, { code: 'INVALID_USERNAME', message: 'Username must be 3-40 letters, numbers, dots, underscores, or dashes.' });
+  if ((!existing || password) && password.length < 8) return sendJson(res, 400, { code: 'WEAK_PASSWORD', message: 'Password must contain at least 8 characters.' });
+  if (db.employeeAccounts.some((item) => item.id !== accountId && item.username === username)) return sendJson(res, 409, { code: 'USERNAME_EXISTS', message: 'That username is already in use.' });
+  if (db.employeeAccounts.some((item) => item.id !== accountId && item.employeeId === employeeId)) return sendJson(res, 409, { code: 'EMPLOYEE_ACCOUNT_EXISTS', message: 'This employee already has an account.' });
+  const timestamp = nowIso();
+  const account = existing || { id: createId('account'), createdAt: timestamp };
+  Object.assign(account, { employeeId, username, active: body.active !== false, updatedAt: timestamp });
+  if (password) Object.assign(account, hashAccountPassword(password));
+  if (!existing) db.employeeAccounts.unshift(account);
+  saveDb(db);
+  sendJson(res, existing ? 200 : 201, { account: publicEmployeeAccount(account, db) });
+}
+
+function handleDeleteEmployeeAccount(res, accountId) {
+  const db = loadDb();
+  const index = db.employeeAccounts.findIndex((item) => item.id === accountId);
+  if (index < 0) return sendJson(res, 404, { code: 'ACCOUNT_NOT_FOUND', message: 'Employee account not found.' });
+  db.employeeAccounts.splice(index, 1);
+  saveDb(db);
+  sendJson(res, 200, { ok: true });
+}
+
 async function handleAuthLogin(req, res) {
   const ip = requestIp(req);
   if (!consumeRateLimit(`auth:${ip}`, AUTH_ATTEMPTS_PER_15_MINUTES, 15 * 60 * 1000)) {
@@ -2511,20 +2658,22 @@ async function handleAuthLogin(req, res) {
     return;
   }
   const body = await readBody(req);
-  const provided = String(body.apiKey || '');
-  const account = ROLE_CREDENTIALS.find((item) => safeEqual(body.username, item.username) && safeEqual(body.password, item.password));
-  const apiKeyLogin = provided && safeEqual(provided, API_KEY);
-  if (!account && !apiKeyLogin) {
-    sendJson(res, 401, { code: 'INVALID_CREDENTIALS', message: 'Invalid username, password, or server key.' });
+  const username = String(body.username || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const configuredAccount = [...ROLE_CREDENTIALS, ...EMPLOYEE_ACCOUNTS].find((item) => safeEqual(username, String(item.username).toLowerCase()) && safeEqual(password, item.password));
+  const dbAccount = loadDb().employeeAccounts.find((item) => item.active !== false && safeEqual(username, item.username) && verifyAccountPassword(password, item));
+  const account = configuredAccount || (dbAccount ? { role: 'employee', username: dbAccount.username, employeeId: dbAccount.employeeId } : null);
+  if (!account) {
+    sendJson(res, 401, { code: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
     return;
   }
-  const role = account?.role || 'admin';
-  const username = account?.username || 'server-admin';
+  const role = account.role;
   const token = crypto.randomBytes(32).toString('base64url');
-  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS, ip, role, username });
+  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS, ip, role, username, employeeId: account?.employeeId || '' });
   const secure = String(getHeader(req, 'x-forwarded-proto') || '').toLowerCase() === 'https';
   res.setHeader('Set-Cookie', `gms_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
-  sendJson(res, 200, { ok: true, role, username, expiresInHours: SESSION_TTL_MS / 3600000 });
+  const redirectTo = roleHomePath(role);
+  sendJson(res, 200, { ok: true, role, username, employeeId: account?.employeeId || '', redirectTo, expiresInHours: SESSION_TTL_MS / 3600000 });
 }
 
 function handleAuthMe(req, res) {
@@ -2533,7 +2682,7 @@ function handleAuthMe(req, res) {
     sendJson(res, 401, { code: 'AUTH_REQUIRED', message: 'Authentication is required.' });
     return;
   }
-  sendJson(res, 200, { authenticated: true, role: session.role, username: session.username, expiresAt: new Date(session.expiresAt).toISOString() });
+  sendJson(res, 200, { authenticated: true, role: session.role, username: session.username, employeeId: session.employeeId || '', expiresAt: new Date(session.expiresAt).toISOString() });
 }
 
 function handleAuthLogout(req, res) {
@@ -2549,7 +2698,6 @@ async function handleRequest(req, res) {
   const method = req.method.toUpperCase();
   const origin = String(getHeader(req, 'origin') || '');
   for (const [name, value] of Object.entries(securityHeaders(req))) res.setHeader(name, value);
-  res.once('finish', () => auditRequest(req, pathname, method, res.statusCode));
 
   if (origin && !allowedOrigin(req)) {
     sendJson(res, 403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Request origin is not allowed.' });
@@ -2644,6 +2792,34 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (method === 'GET' && pathname === '/api/employee-accounts') return handleGetEmployeeAccounts(res);
+    if (method === 'POST' && pathname === '/api/employee-accounts') return handleSaveEmployeeAccount(res, await readBody(req));
+    const accountMatch = pathname.match(/^\/api\/employee-accounts\/([^/]+)$/);
+    if (accountMatch && method === 'PATCH') return handleSaveEmployeeAccount(res, await readBody(req), decodeURIComponent(accountMatch[1]));
+    if (accountMatch && method === 'DELETE') return handleDeleteEmployeeAccount(res, decodeURIComponent(accountMatch[1]));
+
+    if (method === 'GET' && pathname === '/api/employee/home') {
+      const payload = buildPortalPayload(req.auth, url);
+      return payload ? sendJson(res, 200, payload) : sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'This account is not linked to an active employee.' });
+    }
+    if (method === 'POST' && pathname === '/api/employee/profile-photo') {
+      return handleEmployeePhotoUpload(res, req.auth.employeeId, await readBody(req));
+    }
+    if (method === 'POST' && pathname === '/api/employee/leave-requests') {
+      const body = await readBody(req); body.employeeId = req.auth.employeeId;
+      return handleCreateLeaveRequest(res, body, req.auth);
+    }
+    if (method === 'POST' && pathname === '/api/employee/correction-requests') {
+      const body = await readBody(req); body.employeeId = req.auth.employeeId;
+      return handleCreateCorrectionRequest(res, body, req.auth);
+    }
+
+    if (method === 'GET' && pathname === '/api/departments') return sendJson(res, 200, { departments: loadDb().departments });
+    if (method === 'GET' && pathname === '/api/designations') return sendJson(res, 200, { designations: loadDb().designations });
+    if (method === 'GET' && pathname === '/api/leave-requests') return sendJson(res, 200, { leaveRequests: loadDb().leaveRequests });
+    if (method === 'GET' && pathname === '/api/correction-requests') return sendJson(res, 200, { correctionRequests: loadDb().correctionRequests });
+    if (method === 'GET' && pathname === '/api/notifications') return sendJson(res, 200, { notifications: loadDb().notifications.slice(0, 200) });
+
     if (method === 'GET' && (pathname === '/api/time-card' || pathname === '/api/timecard')) {
       handleTimeCard(res, url);
       return;
@@ -2671,11 +2847,6 @@ async function handleRequest(req, res) {
         'Content-Disposition': 'attachment; filename="gms-attendance-db.json"'
       });
       fs.createReadStream(DB_FILE).pipe(res);
-      return;
-    }
-
-    if (method === 'GET' && pathname === '/api/audit') {
-      await handleAuditLog(res, url);
       return;
     }
 
@@ -2719,15 +2890,19 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (method === 'POST' && pathname === '/api/departments') return handleCreateDirectoryRecord(res, 'departments', await readBody(req));
+    if (method === 'POST' && pathname === '/api/designations') return handleCreateDirectoryRecord(res, 'designations', await readBody(req));
+    if (method === 'POST' && pathname === '/api/leave-requests') return handleCreateLeaveRequest(res, await readBody(req), req.auth);
+    if (method === 'POST' && pathname === '/api/correction-requests') return handleCreateCorrectionRequest(res, await readBody(req), req.auth);
+
+    const leaveReviewMatch = pathname.match(/^\/api\/leave-requests\/([^/]+)\/review$/);
+    if (method === 'PATCH' && leaveReviewMatch) return handleReviewWorkflow(res, 'leaveRequests', decodeURIComponent(leaveReviewMatch[1]), await readBody(req), req.auth);
+    const correctionReviewMatch = pathname.match(/^\/api\/correction-requests\/([^/]+)\/review$/);
+    if (method === 'PATCH' && correctionReviewMatch) return handleReviewWorkflow(res, 'correctionRequests', decodeURIComponent(correctionReviewMatch[1]), await readBody(req), req.auth);
+
     if (method === 'POST' && /^\/api\/employees\/[^/]+\/fingerprints$/.test(pathname)) {
       const employeeId = decodeURIComponent(pathname.split('/')[3]);
       await handleAddEmployeeFingerprint(res, employeeId, await readBody(req));
-      return;
-    }
-
-    if (method === 'POST' && /^\/api\/employees\/[^/]+\/photo$/.test(pathname)) {
-      const employeeId = decodeURIComponent(pathname.split('/')[3]);
-      await handleEmployeePhotoUpload(res, employeeId, await readBody(req));
       return;
     }
 
@@ -2876,6 +3051,7 @@ module.exports = {
   isPublicApi,
   deviceRoute,
   roleCanAccess,
+  roleHomePath,
   isRecordedAttendanceLog,
   normalizeSettings,
   consumeRateLimit,

@@ -1,7 +1,7 @@
 (() => {
   const routes = {
     Dashboard: '/dashboard', 'Time Card': '/timecard', Enrollment: '/enrollment',
-    Employees: '/employees', Devices: '/devices', Settings: '/settings', Logs: '/logs'
+    Employees: '/employees', 'Employee Accounts': '/accounts', Devices: '/devices', Settings: '/settings', Logs: '/logs'
   };
   const $ = (id) => document.getElementById(id);
   function clearStaticDemoContent() {
@@ -37,21 +37,13 @@
   const authenticateBrowser = async () => {
     if (!authenticationPromise) {
       authenticationPromise = (async () => {
-        const credential = window.prompt('Enter the server key or your username:');
+        const credential = window.prompt('Enter your username:');
         if (!credential) throw new Error('Authentication is required.');
-        const looksLikeUsername = credential.length < 16 && /^[a-z0-9._-]+$/i.test(credential);
-        let login;
-        if (looksLikeUsername) {
-          const password = window.prompt(`Enter the password for ${credential}:`);
-          if (!password) throw new Error('Authentication is required.');
-          login = await fetch('/api/auth/login', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: credential, password })
-          });
-        } else {
-          login = await fetch('/api/auth/login', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey: credential })
-          });
-        }
+        const password = window.prompt(`Enter the password for ${credential}:`);
+        if (!password) throw new Error('Authentication is required.');
+        const login = await fetch('/api/auth/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: credential, password })
+        });
         if (!login.ok) throw new Error('Invalid login credentials.');
       })().finally(() => { authenticationPromise = null; });
     }
@@ -91,6 +83,7 @@
       ['Time Card', '/timecard', 'timecard.svg'],
       ['Enrollment', '/enrollment', 'fingerprint.svg'],
       ['Employees', '/employees', 'employee.svg'],
+      ['Employee Accounts', '/accounts', 'employee.svg'],
       ['Devices', '/devices', 'device.svg'],
       ['Settings', '/settings', 'settings.svg'],
       ['Logs', '/logs', 'logs.svg']
@@ -750,7 +743,6 @@
       </section>
       <label><span>Employee ID</span><input id="newEmployeeCode" type="text" value="${esc(employee?.employeeCode || (employee?.id ? employee.id.slice(-8) : 'Auto-generated after save'))}" readonly aria-readonly="true"><small>The server automatically assigns a unique 8-character Employee ID.</small></label>
       <label><span>Full Name</span><input id="newFullName" type="text" placeholder="e.g. Juan Dela Cruz" value="${esc(employee?.fullName || '')}" required></label>
-      <label><span>Profile Picture</span><input id="newEmployeePhoto" type="file" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG, or WebP. The picture is resized before upload to Supabase Storage.</small></label>
       <section class="employee-fingerprint-box">
         <div><span>Fingerprints</span><strong id="employeeFingerprintStatus">${linkedFingerprints.length ? `${linkedFingerprints.length} linked finger${linkedFingerprints.length === 1 ? '' : 's'}` : 'No fingerprint linked'}</strong></div>
         <div class="employee-fingerprint-list" id="employeeFingerprintList">${linkedFingerprints.length ? linkedFingerprints.map((id, index) => `<span class="employee-fingerprint-chip ${index === 0 ? 'primary' : ''}"><i data-lucide="fingerprint"></i>ID ${id}${index === 0 ? '<small>Primary</small>' : ''}</span>`).join('') : '<span class="employee-fingerprint-empty">Scan a finger to add it here.</span>'}</div>
@@ -1115,13 +1107,6 @@
           });
         }
       }
-      const photoFile = $('newEmployeePhoto')?.files?.[0];
-      if (photoFile) {
-        const dataUrl = await resizeEmployeePhoto(photoFile);
-        await api(`/api/employees/${encodeURIComponent(savedEmployeeId)}/photo`, {
-          method: 'POST', body: JSON.stringify({ dataUrl })
-        });
-      }
       toast(editingEmployeeId ? 'Employee changes saved.' : 'Employee saved to the server.');
       editingEmployeeId = null;
       $('employeeModal')?.classList.remove('show');
@@ -1129,28 +1114,6 @@
     } catch (error) {
       toast(error.message);
     }
-  }
-
-  function resizeEmployeePhoto(file) {
-    return new Promise((resolve, reject) => {
-      if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return reject(new Error('Select a JPG, PNG, or WebP photo.'));
-      const image = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      image.onload = () => {
-        const size = 512;
-        const canvas = document.createElement('canvas');
-        canvas.width = size; canvas.height = size;
-        const context = canvas.getContext('2d');
-        const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
-        const sourceX = (image.naturalWidth - sourceSize) / 2;
-        const sourceY = (image.naturalHeight - sourceSize) / 2;
-        context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
-        URL.revokeObjectURL(objectUrl);
-        resolve(canvas.toDataURL('image/jpeg', 0.82));
-      };
-      image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not read the selected photo.')); };
-      image.src = objectUrl;
-    });
   }
 
   let enrollmentRecords = [];
@@ -1907,18 +1870,17 @@
       <div class="functional-info-card"><span>Timezone</span><strong id="settingsTimezone">—</strong><small>Timezone used for attendance records.</small></div>
       <div class="functional-info-card"><span>Schema version</span><strong id="settingsSchema">—</strong><small>Current local database structure.</small></div>
       <div class="functional-info-card"><span>Server address</span><strong>${esc(location.origin)}</strong><small>Local URL used by this browser.</small></div>
-    </div><div class="functional-actions"><button class="settings-action secondary" id="refreshSystemHealth" type="button"><i data-lucide="activity"></i> Check Health</button><button class="settings-action primary" id="openSystemLogs" type="button"><i data-lucide="list"></i> Open Logs</button></div></article>`;
+    </div><div class="functional-actions settings-system-actions"><button class="settings-action danger" id="settingsLogout" type="button"><i data-lucide="log-out"></i> Sign Out</button><button class="settings-action secondary" id="refreshSystemHealth" type="button"><i data-lucide="activity"></i> Check Health</button><button class="settings-action primary" id="openSystemLogs" type="button"><i data-lucide="list"></i> Open Logs</button></div></article>`;
     backupPanel.innerHTML = `<article class="panel functional-settings-panel"><div class="functional-panel-heading"><div><h3>Backup & Maintenance</h3><p>Safe tools for downloading and validating local attendance data.</p></div><span class="live-settings-chip">Local database</span></div><div class="functional-settings-grid">
       <div class="functional-action-card"><i data-lucide="download"></i><div><strong>Download Database Backup</strong><small>Save employees, fingerprints, schedules, attendance and settings as JSON.</small></div><button id="downloadDatabaseBackup" type="button">Download Backup</button></div>
       <div class="functional-action-card"><i data-lucide="badge-check"></i><div><strong>Validate Server & Database</strong><small>Run a safe health check without changing any records.</small></div><button id="validateDatabase" type="button">Run Validation</button></div>
       <div class="functional-action-card"><i data-lucide="scroll-text"></i><div><strong>Review Attendance Logs</strong><small>Open the live log page to review saved scanner records.</small></div><button id="reviewDatabaseLogs" type="button">View Logs</button></div>
       <div class="functional-action-card"><i data-lucide="refresh-cw"></i><div><strong>Reload Live Settings</strong><small>Discard unsaved fields and fetch the latest server values.</small></div><button id="reloadLiveSettings" type="button">Reload</button></div>
-    </div><div class="functional-panel-heading" style="margin-top:24px"><div><h3>Security Audit Trail</h3><p>Recent authenticated write operations, roles, source addresses and response status.</p></div><button class="settings-action secondary" id="refreshAuditTrail" type="button"><i data-lucide="refresh-cw"></i> Refresh</button></div><div style="overflow:auto"><table class="logs-table" style="min-width:760px"><thead><tr><th>Time</th><th>Actor</th><th>Role</th><th>Operation</th><th>Path</th><th>Status</th><th>IP</th></tr></thead><tbody id="settingsAuditBody"><tr><td colspan="7">Loading audit records...</td></tr></tbody></table></div><p class="functional-safety-note"><i data-lucide="shield-check"></i> PostgreSQL restore requires explicit validation and the server-side <code>-Apply</code> switch.</p></article>`;
+    </div><p class="functional-safety-note"><i data-lucide="shield-check"></i> PostgreSQL restore requires explicit validation and the server-side <code>-Apply</code> switch.</p></article>`;
     bindFunctionalSettingsControls();
     $('generalSettingsForm')?.addEventListener('submit', saveSettings, true);
     refreshSettingsDeviceStatus();
     refreshSettingsHealth();
-    refreshAuditTrail();
     window.lucide?.createIcons();
   }
 
@@ -1949,17 +1911,6 @@
     } catch (error) { if ($('settingsHealthChip')) $('settingsHealthChip').textContent = 'Server unavailable'; throw error; }
   }
 
-  async function refreshAuditTrail() {
-    const body = $('settingsAuditBody');
-    if (!body) return;
-    try {
-      const { audit } = await api('/api/audit?limit=50');
-      body.innerHTML = audit.length ? audit.map((record) => `<tr><td>${esc(when(record.at))}</td><td>${esc(record.actor || 'Unknown')}</td><td>${esc(record.role || 'legacy')}</td><td>${esc(record.method)}</td><td>${esc(record.pathname)}</td><td>${esc(record.status)}</td><td>${esc(record.ip || '')}</td></tr>`).join('') : '<tr><td colspan="7">No write operations have been recorded.</td></tr>';
-    } catch (error) {
-      body.innerHTML = `<tr><td colspan="7">${esc(error.message)}</td></tr>`;
-    }
-  }
-
   function bindFunctionalSettingsControls() {
     $('saveAttendanceRules')?.addEventListener('click', () => saveSettingsPatch({ graceMinutes: Number($('rulesGraceMinutes').value), requiredPaidHours: Number($('rulesPaidHours').value), duplicateScanDelayMinutes: Number($('rulesDuplicateMinutes').value), earlyOutProtectionEnabled: $('rulesEarlyOut').checked, emergencyTimeOutEnabled: $('rulesEmergencyOut').checked }, 'Attendance rules saved.').catch((error) => toast(error.message)));
     ['prefAttendancePopup', 'prefAttendanceSound', 'prefDeviceAlerts'].forEach((id) => $(id)?.addEventListener('change', () => {
@@ -1983,13 +1934,21 @@
     $('refreshSettingsDevices')?.addEventListener('click', refreshSettingsDeviceStatus);
     $('saveDeviceSettings')?.addEventListener('click', () => saveSettingsPatch({ esp32DisplayDurationMs: Number($('settingsDisplaySeconds').value) * 1000 }, 'ESP32 display setting saved.').catch((error) => toast(error.message)));
     $('openDevicesPage')?.addEventListener('click', () => { location.href = '/devices'; });
+    $('settingsLogout')?.addEventListener('click', async () => {
+      const button = $('settingsLogout');
+      if (button) { button.disabled = true; button.innerHTML = '<i data-lucide="loader-circle"></i> Signing out...'; window.lucide?.createIcons(); }
+      try {
+        await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      } finally {
+        window.location.replace('/');
+      }
+    });
     $('refreshSystemHealth')?.addEventListener('click', () => refreshSettingsHealth().then(() => toast('Server health check passed.')).catch((error) => toast(error.message)));
     $('openSystemLogs')?.addEventListener('click', () => { location.href = '/logs'; });
     $('downloadDatabaseBackup')?.addEventListener('click', () => { location.href = '/api/export/db'; });
     $('validateDatabase')?.addEventListener('click', () => refreshSettingsHealth().then(() => toast('Server and database validation passed.')).catch((error) => toast(error.message)));
     $('reviewDatabaseLogs')?.addEventListener('click', () => { location.href = '/logs'; });
     $('reloadLiveSettings')?.addEventListener('click', () => location.reload());
-    $('refreshAuditTrail')?.addEventListener('click', () => refreshAuditTrail().catch((error) => toast(error.message)));
   }
 
   async function saveSettings(event) {
@@ -2022,6 +1981,75 @@
     }
   }
 
+  let liveEmployeeAccounts = [];
+  let accountEmployees = [];
+  function renderEmployeeAccountRows() {
+    const query = ($('accountSearch')?.value || '').trim().toLowerCase();
+    const status = $('accountStatusFilter')?.value || 'all';
+    const filtered = liveEmployeeAccounts.filter((account) => {
+      const matchesQuery = !query || [account.employeeName, account.employeeCode, account.username].some((value) => String(value || '').toLowerCase().includes(query));
+      const matchesStatus = status === 'all' || (status === 'active' ? account.active : !account.active);
+      return matchesQuery && matchesStatus;
+    });
+    $('employeeAccountRows').innerHTML = filtered.length ? filtered.map((account) => `<tr><td><strong>${esc(account.employeeName)}</strong></td><td>${esc(account.employeeCode || '—')}</td><td><span class="account-username">${esc(account.username)}</span></td><td><span class="account-status ${account.active ? '' : 'inactive'}">${account.active ? 'Active' : 'Disabled'}</span></td><td>${esc(when(account.updatedAt))}</td><td><div class="account-row-actions"><button data-edit-account="${esc(account.id)}">Edit</button><button class="delete" data-delete-account="${esc(account.id)}">Delete</button></div></td></tr>`).join('') : `<tr><td colspan="6" class="accounts-empty">${liveEmployeeAccounts.length ? 'No accounts match this search or filter.' : 'No employee accounts yet. Click “Add Employee Account” to create one.'}</td></tr>`;
+  }
+  function openAccountModal(account = null) {
+    const assignedIds = new Set(liveEmployeeAccounts.filter((item) => item.id !== account?.id).map((item) => item.employeeId));
+    const availableEmployees = accountEmployees.filter((employee) => !assignedIds.has(employee.id));
+    $('editingAccountId').value = account?.id || '';
+    $('accountModalTitle').textContent = account ? 'Edit Employee Account' : 'Add Employee Account';
+    $('accountEmployee').innerHTML = availableEmployees.length ? availableEmployees.map((employee) => `<option value="${esc(employee.id)}">${esc(employee.fullName)} · ${esc(employee.employeeCode || employee.id.slice(-8))}</option>`).join('') : '<option value="">All employees already have an account</option>';
+    $('accountEmployee').value = account?.employeeId || availableEmployees[0]?.id || '';
+    $('accountEmployee').disabled = !availableEmployees.length;
+    $('accountUsername').value = account?.username || '';
+    $('accountPassword').value = '';
+    $('accountPassword').type = 'password';
+    $('toggleAccountPassword').textContent = 'Show';
+    $('accountPassword').required = !account;
+    $('accountPasswordHelp').textContent = account ? 'Leave blank to keep the current password.' : 'Required for new accounts. Minimum 8 characters.';
+    $('accountActiveInput').checked = account?.active !== false;
+    $('accountFormMessage').textContent = '';
+    $('saveEmployeeAccount').disabled = !availableEmployees.length;
+    $('accountModal').hidden = false;
+    (availableEmployees.length ? $('accountUsername') : $('closeAccountModal')).focus();
+  }
+  async function employeeAccounts() {
+    const [accountResult, employeeResult] = await Promise.all([api('/api/employee-accounts'), api('/api/employees')]);
+    liveEmployeeAccounts = accountResult.accounts || [];
+    accountEmployees = employeeResult.employees || [];
+    $('accountTotal').textContent = liveEmployeeAccounts.length;
+    $('accountActive').textContent = liveEmployeeAccounts.filter((item) => item.active).length;
+    $('accountMissing').textContent = Math.max(0, accountEmployees.length - liveEmployeeAccounts.length);
+    renderEmployeeAccountRows();
+    $('accountsPageMessage').textContent = `${liveEmployeeAccounts.length} account${liveEmployeeAccounts.length === 1 ? '' : 's'} linked to ${accountEmployees.length} employee${accountEmployees.length === 1 ? '' : 's'}.`;
+    window.lucide?.createIcons();
+  }
+  function bindEmployeeAccountControls() {
+    $('addEmployeeAccount')?.addEventListener('click', () => openAccountModal());
+    ['closeAccountModal', 'cancelAccountModal'].forEach((id) => $(id)?.addEventListener('click', () => { $('accountModal').hidden = true; }));
+    $('accountSearch')?.addEventListener('input', renderEmployeeAccountRows);
+    $('accountStatusFilter')?.addEventListener('change', renderEmployeeAccountRows);
+    $('toggleAccountPassword')?.addEventListener('click', () => { const input = $('accountPassword'); const show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggleAccountPassword').textContent = show ? 'Hide' : 'Show'; });
+    $('accountModal')?.addEventListener('click', (event) => { if (event.target === $('accountModal')) $('accountModal').hidden = true; });
+    $('employeeAccountRows')?.addEventListener('click', async (event) => {
+      const edit = event.target.closest('[data-edit-account]');
+      if (edit) return openAccountModal(liveEmployeeAccounts.find((item) => item.id === edit.dataset.editAccount));
+      const remove = event.target.closest('[data-delete-account]');
+      if (!remove || !confirm('Delete this employee login account?')) return;
+      await api(`/api/employee-accounts/${encodeURIComponent(remove.dataset.deleteAccount)}`, { method: 'DELETE' });
+      toast('Employee account deleted.'); await employeeAccounts();
+    });
+    $('employeeAccountForm')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const id = $('editingAccountId').value;
+      const payload = { employeeId: $('accountEmployee').value, username: $('accountUsername').value.trim(), password: $('accountPassword').value, active: $('accountActiveInput').checked };
+      try {
+        await api(id ? `/api/employee-accounts/${encodeURIComponent(id)}` : '/api/employee-accounts', { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+        $('accountModal').hidden = true; toast(id ? 'Employee account updated.' : 'Employee account created.'); await employeeAccounts();
+      } catch (error) { $('accountFormMessage').textContent = error.message; }
+    });
+  }
+
   const path = location.pathname === '/' ? '/dashboard' : location.pathname;
   document.body.classList.add(`page-${path.slice(1) || 'dashboard'}`);
   if (!['/dashboard', '/timecard'].includes(path)) {
@@ -2032,7 +2060,7 @@
     }));
   }
   const runners = { '/dashboard': dashboard, '/devices': devices, '/employees': employees,
-    '/enrollment': enrollment, '/logs': logs, '/timecard': timecard, '/settings': settings };
+    '/enrollment': enrollment, '/logs': logs, '/timecard': timecard, '/settings': settings, '/accounts': employeeAccounts };
   const run = runners[path];
   const safeRun = () => run?.().catch((error) => {
     console.error(error);
@@ -2046,6 +2074,7 @@
   installCanonicalSidebar(path);
   installSharedBrand();
   loadSharedIdentity();
+  if (path === '/accounts') bindEmployeeAccountControls();
   if (path === '/dashboard') bindLiveDashboardControls(safeRun);
   if (path === '/employees') $('employeeForm')?.addEventListener('submit', saveEmployee, true);
   if (path === '/enrollment') {

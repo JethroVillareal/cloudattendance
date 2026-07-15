@@ -19,7 +19,7 @@ Run `npm install` once to install the PostgreSQL client dependency.
 - Configure exact dashboard origins with `ALLOWED_ORIGINS` when using a hostname or reverse proxy.
 - Configure a separate `EMERGENCY_ATTENDANCE_PASSWORD`; emergency attendance is disabled when it is missing.
 - Destructive `/api/testing/*` routes are disabled unless `ENABLE_TEST_ENDPOINTS=true`.
-- Write operations are recorded without bodies or secrets in `data/audit.jsonl`; recent records are available from authenticated `GET /api/audit?limit=100`.
+- Security audit-trail persistence is disabled to prevent continuous audit-data growth. Attendance logs remain available in the normal Logs module.
 - PostgreSQL retains the latest 100 point-in-time snapshots in `app_state_history`.
 - Use HTTPS before exposing the server outside a trusted LAN.
 - Optional named accounts are configured with `ADMIN_*`, `HR_*`, and `VIEWER_*`. Admin has full access, HR can manage employees and attendance, and Viewer is read-only.
