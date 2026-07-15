@@ -210,13 +210,15 @@
     weekFromDate.setDate(selectedDate.getDate() - 6);
     const timeCardFrom = weekFromDate.toLocaleDateString('en-CA') < monthFrom
       ? weekFromDate.toLocaleDateString('en-CA') : monthFrom;
-    const [{ summary }, attendanceData, timeCardData] = await Promise.all([
+    const [{ summary }, attendanceData, timeCardData, employeeData] = await Promise.all([
       api('/api/dashboard/summary'),
       api('/api/attendance?limit=500'),
-      api(`/api/time-card?from=${encodeURIComponent(timeCardFrom)}&to=${encodeURIComponent(monthTo)}`)
+      api(`/api/time-card?from=${encodeURIComponent(timeCardFrom)}&to=${encodeURIComponent(monthTo)}`),
+      api('/api/employees')
     ]);
     const liveAttendance = attendanceData.attendance || [];
     const liveTimeCards = timeCardData.timeCards || [];
+    const dashboardEmployees = employeeData.employees || [];
     const verificationRecords = liveAttendance.filter((log) =>
       String(log.reviewStatus || '').toUpperCase() !== 'VERIFIED' && (log.accepted === false || log.emergency === true ||
       String(log.code || '').toUpperCase().startsWith('EMERGENCY') ||
@@ -275,7 +277,7 @@
           : reviewStatus === 'CORRECTION_REQUESTED' ? 'Correction Requested'
           : (log.accepted === false || isEmergency) ? 'Needs Review' : 'Verified';
         return `<tr>
-        <td>${esc(when(log.timestamp || log.createdAt))}</td><td>${employeeIdentity({ fullName: log.fullName || log.employeeName || 'Unknown', active: true })}</td>
+        <td>${esc(when(log.timestamp || log.createdAt))}</td><td>${employeeIdentity(dashboardEmployees.find((employee) => employee.id === log.employeeId) || { fullName: log.fullName || log.employeeName || 'Unknown', active: true })}</td>
         <td>${esc(log.branch || summary.branchName)}</td>
         <td><span class="activity-pill ${activityClass(type)}">${esc(String(type).replaceAll('_', ' '))}</span></td>
         <td><span class="activity-pill ${activityClass(status)}">${esc(String(status).replaceAll('_', ' '))}</span></td>
