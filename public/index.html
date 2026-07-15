@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,6 +8,7 @@
   <link rel="stylesheet" href="/style.css?v=20260715-premium-login">
   <link rel="stylesheet" href="/premium-login.css?v=20260715-1">
 </head>
+
 <body>
   <section id="loginScreen" class="login-screen" aria-labelledby="loginTitle">
     <div class="login-visual">
@@ -26,16 +28,37 @@
             <div class="login-overview-head"><strong>Today's Overview</strong><span>Today⌄</span></div>
             <div class="login-rate"><b>98%</b><small>Attendance Rate</small></div>
             <svg class="login-chart" viewBox="0 0 320 110" preserveAspectRatio="none">
-              <defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8c70ff" stop-opacity=".34"/><stop offset="1" stop-color="#8c70ff" stop-opacity="0"/></linearGradient></defs>
-              <path class="chart-area" d="M0 92 C35 87 39 66 70 73 S112 82 137 52 S180 82 208 52 S248 61 274 30 S300 18 320 9 L320 110 L0 110 Z"/>
-              <path class="chart-line" d="M0 92 C35 87 39 66 70 73 S112 82 137 52 S180 82 208 52 S248 61 274 30 S300 18 320 9"/>
+              <defs>
+                <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#8c70ff" stop-opacity=".34" />
+                  <stop offset="1" stop-color="#8c70ff" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <path class="chart-area"
+                d="M0 92 C35 87 39 66 70 73 S112 82 137 52 S180 82 208 52 S248 61 274 30 S300 18 320 9 L320 110 L0 110 Z" />
+              <path class="chart-line"
+                d="M0 92 C35 87 39 66 70 73 S112 82 137 52 S180 82 208 52 S248 61 274 30 S300 18 320 9" />
             </svg>
-            <div class="login-chart-days"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
+            <div class="login-chart-days">
+              <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+            </div>
           </div>
         </div>
         <div class="login-art-row">
-          <div class="login-checkins-card"><strong>Recent Check-ins</strong><div><i>JV</i><span><b>Jethro V.</b><small>Developer</small></span><time>8:45 AM</time></div><div><i>SD</i><span><b>Stephanie D.</b><small>Operations</small></span><time>8:47 AM</time></div><div><i>SK</i><span><b>Shawn K.</b><small>Staff</small></span><time>8:50 AM</time></div></div>
-          <div class="login-team-card"><strong>Team Status</strong><div class="login-donut"></div><ul><li><i></i>Present <b>78%</b></li><li><i></i>Late <b>15%</b></li><li><i></i>Absent <b>7%</b></li></ul><p>Total Employees <b>124</b></p></div>
+          <div class="login-checkins-card"><strong>Recent Check-ins</strong>
+            <div><i>JV</i><span><b>Jethro V.</b><small>Developer</small></span><time>8:45 AM</time></div>
+            <div><i>SD</i><span><b>Stephanie D.</b><small>Operations</small></span><time>8:47 AM</time></div>
+            <div><i>SK</i><span><b>Shawn K.</b><small>Staff</small></span><time>8:50 AM</time></div>
+          </div>
+          <div class="login-team-card"><strong>Team Status</strong>
+            <div class="login-donut"></div>
+            <ul>
+              <li><i></i>Present <b>78%</b></li>
+              <li><i></i>Late <b>15%</b></li>
+              <li><i></i>Absent <b>7%</b></li>
+            </ul>
+            <p>Total Employees <b>124</b></p>
+          </div>
         </div>
       </div>
       <div class="login-system-status"><span></span> Attendance system ready <b>Secure</b></div>
@@ -43,7 +66,8 @@
     </div>
     <div class="login-panel">
       <div class="login-card">
-        <div class="login-mobile-brand"><span class="login-logo"><img src="/images/gwd-logo.jpg" alt="GMS Attendance logo"></span><strong>GMS Attendance</strong></div>
+        <div class="login-mobile-brand"><span class="login-logo"><img src="/images/gwd-logo.jpg"
+              alt="GMS Attendance logo"></span><strong>GMS Attendance</strong></div>
         <div class="login-heading">
           <span class="login-eyebrow">Welcome back</span>
           <h1 id="loginTitle">Sign in to your account</h1>
@@ -56,21 +80,28 @@
               <span class="login-field-icon" aria-hidden="true">@</span>
               <input id="loginUsername" name="username" autocomplete="username" placeholder="Enter your username">
             </div>
-            <div class="login-label-row"><label for="loginPassword">Password</label><button id="forgotPasswordBtn" type="button">Forgot password?</button></div>
+            <div class="login-label-row"><label for="loginPassword">Password</label><button id="forgotPasswordBtn"
+                type="button">Forgot password?</button></div>
             <div class="login-input-wrap">
               <span class="login-field-icon" aria-hidden="true">•</span>
-              <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Enter your password">
-              <button id="toggleLoginPassword" class="login-reveal" type="button" aria-label="Show password">Show</button>
+              <input id="loginPassword" name="password" type="password" autocomplete="current-password"
+                placeholder="Enter your password">
+              <button id="toggleLoginPassword" class="login-reveal" type="button"
+                aria-label="Show password">Show</button>
             </div>
           </div>
-          <label class="login-remember"><input id="rememberLogin" type="checkbox" checked><span>Remember me</span></label>
+          <label class="login-remember"><input id="rememberLogin" type="checkbox" checked><span>Remember
+              me</span></label>
           <p id="loginMessage" class="login-message" role="alert" aria-live="polite"></p>
-          <button id="loginSubmit" class="login-submit" type="submit"><span>Sign in securely</span><span aria-hidden="true">→</span></button>
+          <button id="loginSubmit" class="login-submit" type="submit"><span>Sign in securely</span><span
+              aria-hidden="true">→</span></button>
         </form>
         <div class="login-divider"><span>Or continue with</span></div>
         <div class="login-socials">
-          <button class="login-social" type="button" data-social-provider="Google"><img src="/icons/google.svg" alt=""><b>Continue with Google</b></button>
-          <button class="login-social" type="button" data-social-provider="Facebook"><img src="/icons/facebook.svg" alt=""><b>Continue with Facebook</b></button>
+          <button class="login-social" type="button" data-social-provider="Google"><img src="/icons/google.svg"
+              alt=""><b>Continue with Google</b></button>
+          <button class="login-social" type="button" data-social-provider="Facebook"><img src="/icons/facebook.svg"
+              alt=""><b>Continue with Facebook</b></button>
         </div>
         <p class="login-footer">Protected attendance workspace · Asia/Manila</p>
       </div>
@@ -89,14 +120,22 @@
       </div>
 
       <nav class="nav-list" aria-label="Main">
-        <button class="nav-item active" data-view="dashboardView"><span class="nav-icon icon-dashboard" aria-hidden="true"></span>Dashboard</button>
-        <button class="nav-item" data-view="timeCardView"><span class="nav-icon icon-timecard" aria-hidden="true"></span>Time Card</button>
-        <button class="nav-item" data-view="enrollmentView"><span class="nav-icon icon-fingerprint" aria-hidden="true"></span>Enrollment</button>
-        <button class="nav-item" data-view="employeesView"><span class="nav-icon icon-employee" aria-hidden="true"></span>Employees</button>
-        <button class="nav-item" data-view="workforceView"><span class="nav-icon icon-timecard" aria-hidden="true"></span>Workforce</button>
-        <button class="nav-item" data-view="devicesView"><span class="nav-icon icon-device" aria-hidden="true"></span>Devices</button>
-        <button class="nav-item" data-view="settingsView"><span class="nav-icon icon-settings" aria-hidden="true"></span>Settings</button>
-        <button class="nav-item" data-view="logsView"><span class="nav-icon icon-logs" aria-hidden="true"></span>Logs</button>
+        <button class="nav-item active" data-view="dashboardView"><span class="nav-icon icon-dashboard"
+            aria-hidden="true"></span>Dashboard</button>
+        <button class="nav-item" data-view="timeCardView"><span class="nav-icon icon-timecard"
+            aria-hidden="true"></span>Time Card</button>
+        <button class="nav-item" data-view="enrollmentView"><span class="nav-icon icon-fingerprint"
+            aria-hidden="true"></span>Enrollment</button>
+        <button class="nav-item" data-view="employeesView"><span class="nav-icon icon-employee"
+            aria-hidden="true"></span>Employees</button>
+        <button class="nav-item" data-view="workforceView"><span class="nav-icon icon-timecard"
+            aria-hidden="true"></span>Workforce</button>
+        <button class="nav-item" data-view="devicesView"><span class="nav-icon icon-device"
+            aria-hidden="true"></span>Devices</button>
+        <button class="nav-item" data-view="settingsView"><span class="nav-icon icon-settings"
+            aria-hidden="true"></span>Settings</button>
+        <button class="nav-item" data-view="logsView"><span class="nav-icon icon-logs"
+            aria-hidden="true"></span>Logs</button>
       </nav>
 
       <div class="sidebar-status">
@@ -112,7 +151,8 @@
           <p id="viewSubtitle">Operations overview</p>
         </div>
         <div class="pagebar-actions">
-          <button id="refreshBtn" class="secondary"><span class="button-icon icon-refresh" aria-hidden="true"></span>Refresh</button>
+          <button id="refreshBtn" class="secondary"><span class="button-icon icon-refresh"
+              aria-hidden="true"></span>Refresh</button>
         </div>
       </header>
 
@@ -183,4 +223,5 @@
 
   <script src="/login.js?v=20260715-login8"></script>
 </body>
+
 </html>
