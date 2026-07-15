@@ -53,6 +53,9 @@ const SCHEMA_VERSION = 5;
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const SUPABASE_EMPLOYEE_PHOTOS_BUCKET = String(process.env.SUPABASE_EMPLOYEE_PHOTOS_BUCKET || 'employee-photos').trim();
+const SUPABASE_IMAGE_ORIGIN = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(SUPABASE_URL)
+  ? SUPABASE_URL
+  : '';
 const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
@@ -401,11 +404,12 @@ function allowedOrigin(req) {
 
 function securityHeaders(req) {
   const origin = allowedOrigin(req);
+  const imageSources = `'self' data:${SUPABASE_IMAGE_ORIGIN ? ` ${SUPABASE_IMAGE_ORIGIN}` : ''}`;
   return {
     ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'",
+    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources}; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'`,
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -443,7 +447,8 @@ function sendFile(req, res, filePath, contentType) {
     if (contentType.startsWith('text/html')) {
       const nonce = crypto.randomBytes(18).toString('base64');
       body = Buffer.from(data.toString('utf8').replace(/<script(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`));
-      headers['Content-Security-Policy'] = `default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'`;
+      const imageSources = `'self' data:${SUPABASE_IMAGE_ORIGIN ? ` ${SUPABASE_IMAGE_ORIGIN}` : ''}`;
+      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources}; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'`;
     }
     res.writeHead(200, headers);
     res.end(body);
@@ -2559,7 +2564,9 @@ async function handleRequest(req, res) {
   try {
     if (method === 'GET' && pathname === '/health') {
       const storageStatus = storage.getStatus();
-      const degraded = ['unavailable', 'write_failed'].includes(storageStatus.postgresql) || ['failed', 'invalid'].includes(storageStatus.sqliteBackup);
+      const primaryFailed = ['unavailable', 'write_failed'].includes(storageStatus.postgresql);
+      const fallbackFailed = storageStatus.activePrimary !== 'postgresql' && ['failed', 'invalid'].includes(storageStatus.sqliteBackup);
+      const degraded = primaryFailed || fallbackFailed;
       sendJson(res, degraded ? 503 : 200, { ok: !degraded, status: degraded ? 'degraded' : 'healthy', serverTime: nowIso(), timezone: DEVICE_TIMEZONE, schemaVersion: SCHEMA_VERSION, storage: storageStatus });
       return;
     }
