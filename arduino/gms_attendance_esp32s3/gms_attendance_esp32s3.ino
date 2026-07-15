@@ -1,7 +1,7 @@
 ﻿#include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <Wire.h>
 #include <FS.h>
 #include <LittleFS.h>
@@ -31,7 +31,7 @@
 
 
 const char* FIRMWARE_VERSION =
-    "4.3.0-microsd-offline";
+    "4.4.0-render-https";
 
 // =====================================================
 // GPIO CONFIGURATION
@@ -96,7 +96,7 @@ constexpr unsigned long DISPLAY_COMMAND_INTERVAL_MS = 2500;
 constexpr unsigned long DUPLICATE_FINGER_DELAY_MS = 3000;
 constexpr unsigned long READY_RESTORE_DELAY_MS = 2500;
 constexpr unsigned long FINGER_REMOVE_TIMEOUT_MS = 5000;
-constexpr uint16_t HEARTBEAT_HTTP_TIMEOUT_MS = 1200;
+constexpr uint16_t HEARTBEAT_HTTP_TIMEOUT_MS = 15000;
 
 constexpr uint8_t MAX_SYNC_PER_PASS = 10;
 
@@ -1671,10 +1671,11 @@ bool sendScanToServer(
     return false;
   }
 
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
 
-  http.setTimeout(6000);
+  http.setTimeout(30000);
 
   if (!http.begin(client, API_URL)) {
     Serial.println(
@@ -1792,9 +1793,10 @@ void sendFingerprintScanStatus(const String& status) {
   document["status"] = status;
   String json;
   serializeJson(document, json);
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.setTimeout(1200);
+  http.setTimeout(8000);
   if (!http.begin(client, fingerprintScanStatusUrl())) return;
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-Key", API_KEY);
@@ -1813,9 +1815,10 @@ bool sendEnrollmentRequestToServer(
     return false;
   }
 
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.setTimeout(5000);
+  http.setTimeout(30000);
 
   if (!http.begin(client, enrollmentRequestUrl())) {
     Serial.println("[ENROLL API] HTTP initialization failed.");
@@ -1966,7 +1969,8 @@ void sendReaderHeartbeat() {
   String json;
   serializeJson(document, json);
 
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
   http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
 
@@ -2047,9 +2051,10 @@ void acknowledgeDisplayCommand(
   String json;
   serializeJson(document, json);
 
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.setTimeout(2500);
+  http.setTimeout(8000);
 
   if (!http.begin(client, displayCommandAckUrl())) {
     Serial.println("[COMMAND] ACK HTTP init failed.");
@@ -2077,9 +2082,10 @@ void pollDisplayCommand() {
     return;
   }
 
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.setTimeout(2500);
+  http.setTimeout(8000);
 
   if (!http.begin(client, displayCommandUrl())) {
     Serial.println("[COMMAND] Display command HTTP init failed.");
