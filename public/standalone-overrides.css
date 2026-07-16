@@ -1,0 +1,22 @@
+/* Final cross-page sizing guardrails for the standalone administration portal. */
+button, [role="button"], input, select, textarea { font: inherit; }
+button:not(:disabled), [role="button"] { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgba(8, 133, 112, .22) !important;
+  outline-offset: 2px !important;
+}
+img, svg { max-width: 100%; }
+.main, .main-content { min-width: 0; }
+.table-container, .table-wrapper, .table-responsive { max-width: 100%; overflow-x: auto; }
+
+@media (max-width: 720px) {
+  .app-shell, .app { display: block !important; }
+  .sidebar { position: static !important; width: 100% !important; height: auto !important; }
+  .navigation, .side-nav { display: flex !important; gap: 7px !important; overflow-x: auto !important; padding-bottom: 7px !important; }
+  .nav-item, .nav-link { min-width: max-content !important; min-height: 44px !important; padding-inline: 13px !important; }
+  .main, .main-content { padding: 14px !important; }
+  .page-header, .page-heading, .page-title { align-items: flex-start !important; gap: 12px !important; }
+  .page-actions, .header-actions, .toolbar-actions { flex-wrap: wrap !important; }
+  .modal, .details-modal { width: calc(100vw - 24px) !important; max-height: calc(100svh - 24px) !important; }
+}

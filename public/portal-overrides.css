@@ -1,0 +1,39 @@
+/* Responsive and accessibility refinements shared by HR and employee portals. */
+button, input, select, textarea { font: inherit; }
+button:not(:disabled) { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgba(48, 75, 232, .22);
+  outline-offset: 2px;
+}
+input, select, textarea, form button, .logout { min-height: 44px; }
+
+@media (max-width: 900px) {
+  .portal-shell, .hr-shell { grid-template-columns: minmax(0, 1fr); }
+  .portal-shell aside, .hr-shell aside { position: static; height: auto; padding: 18px; }
+  .portal-shell nav, .hr-shell nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+  }
+  .portal-shell nav button, .hr-shell nav button { min-width: max-content; min-height: 44px; }
+  .portal-shell .logout, .hr-shell .logout { margin-top: 12px; }
+  .portal-shell main, .hr-shell main { padding: 26px 18px; }
+}
+
+@media (max-width: 580px) {
+  .portal-shell main, .hr-shell main { padding: 20px 12px; }
+  .portal-shell header, .hr-shell header { align-items: flex-start; gap: 12px; }
+  .portal-shell h1, .hr-shell h1 { font-size: clamp(24px, 8vw, 30px); }
+  .summary-grid, .hr-shell .summary { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .portal-shell .card, .hr-shell .card { padding: 16px; border-radius: 14px; }
+  .page-head { display: grid; gap: 12px; }
+  .page-head > div:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .page-head input { margin: 0; }
+  .page-head button { grid-column: 1 / -1; }
+  .two, .schedule-grid { grid-template-columns: minmax(0, 1fr); }
+  .detail, .activity, .request, .notification, .linked { flex-wrap: wrap; gap: 10px; }
+  .profile-photo-editor { align-items: flex-start; flex-direction: column; }
+}

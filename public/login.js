@@ -17,10 +17,6 @@ function toggleSecret(inputId, buttonId, label) {
   button.setAttribute('aria-label', `${reveal ? 'Hide' : 'Show'} ${label}`);
 }
 
-function showUnavailableFeature(feature) {
-  setMessage(`${feature} is ready in the interface but is not connected to an authentication provider yet.`, 'working');
-}
-
 async function submitLogin(event) {
   event.preventDefault();
   const username = byId('loginUsername').value.trim();
@@ -57,8 +53,6 @@ async function submitLogin(event) {
 
 byId('toggleLoginPassword').addEventListener('click', () => toggleSecret('loginPassword', 'toggleLoginPassword', 'password'));
 byId('loginForm').addEventListener('submit', submitLogin);
-byId('forgotPasswordBtn').addEventListener('click', () => showUnavailableFeature('Password recovery'));
-document.querySelectorAll('[data-social-provider]').forEach((button) => button.addEventListener('click', () => showUnavailableFeature(`${button.dataset.socialProvider} sign-in`)));
 const rememberedUsername = localStorage.getItem('gmsRememberedUsername') || '';
 if (rememberedUsername) {
   byId('loginUsername').value = rememberedUsername;
