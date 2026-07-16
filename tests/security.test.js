@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   safeEqual,
   cleanDisplayText,
+  normalizeAccountPhone,
   normalizeDeviceId,
   isPublicApi,
   deviceRoute,
@@ -21,6 +22,14 @@ test('constant-time key comparison accepts only exact keys', () => {
   assert.equal(safeEqual('correct-key', 'correct-key'), true);
   assert.equal(safeEqual('correct-key', 'wrong-key'), false);
   assert.equal(safeEqual('short', 'longer'), false);
+});
+
+test('account phone binding normalizes common formats safely', () => {
+  assert.equal(normalizeAccountPhone('+63 917-123-4567'), '+639171234567');
+  assert.equal(normalizeAccountPhone('0917 123 4567'), '+639171234567');
+  assert.equal(normalizeAccountPhone('9171234567'), '+639171234567');
+  assert.equal(normalizeAccountPhone('(02) 8123 4567'), '+0281234567');
+  assert.equal(normalizeAccountPhone('123'), '');
 });
 
 test('role permissions keep devices and viewers away from administration', () => {
@@ -44,6 +53,8 @@ test('employee role is restricted to its own employee API surface', () => {
   assert.equal(roleCanAccess('employee', '/api/employees', 'GET'), false);
   assert.equal(roleCanAccess('employee', '/api/timecard', 'GET'), false);
   assert.equal(roleCanAccess('employee', '/api/employee/home', 'DELETE'), false);
+  assert.equal(roleCanAccess('employee', '/api/auth/phone', 'PATCH'), true);
+  assert.equal(roleCanAccess('hr', '/api/auth/phone', 'PATCH'), true);
 });
 
 test('each account role opens the correct workspace', () => {
@@ -70,6 +81,7 @@ test('settings clamp unsafe operational values', () => {
 test('only authentication entry points are public', () => {
   assert.equal(isPublicApi('/api/auth/login', 'POST'), true);
   assert.equal(isPublicApi('/api/auth/password-reset-request', 'POST'), true);
+  assert.equal(isPublicApi('/api/auth/firebase', 'POST'), true);
   assert.equal(isPublicApi('/api/auth/oauth/google', 'GET'), true);
   assert.equal(isPublicApi('/api/auth/oauth/facebook/callback', 'GET'), true);
   assert.equal(isPublicApi('/api/employees', 'GET'), false);

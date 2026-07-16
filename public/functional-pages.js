@@ -1289,8 +1289,12 @@
     const fullName = [$('firstName')?.value, $('middleName')?.value, $('lastName')?.value]
       .map((part) => part?.trim()).filter(Boolean).join(' ');
     if (!fullName) return toast('Employee name is required.');
+    const phone = $('phone')?.value.trim() || '';
+    if (phone && !/^\+?[0-9 ()-]{7,20}$/.test(phone)) return toast('Enter a valid phone number using numbers, spaces, parentheses, +, or hyphens.');
     await api('/api/employees', { method: 'POST', body: JSON.stringify({
       fullName,
+      email: $('email')?.value.trim() || '',
+      phone,
       allowNoFingerprint: true,
       active: $('employeeStatus')?.value !== 'Inactive',
       graceMinutes: 10
@@ -1983,43 +1987,62 @@
 
   let liveEmployeeAccounts = [];
   let accountEmployees = [];
+  let currentManagedUser = null;
   function renderEmployeeAccountRows() {
     const query = ($('accountSearch')?.value || '').trim().toLowerCase();
     const status = $('accountStatusFilter')?.value || 'all';
     const filtered = liveEmployeeAccounts.filter((account) => {
-      const matchesQuery = !query || [account.employeeName, account.employeeCode, account.username].some((value) => String(value || '').toLowerCase().includes(query));
+      const matchesQuery = !query || [account.employeeName, account.employeeCode, account.username, account.phone, account.role].some((value) => String(value || '').toLowerCase().includes(query));
       const matchesStatus = status === 'all' || (status === 'active' ? account.active : !account.active);
       return matchesQuery && matchesStatus;
     });
-    $('employeeAccountRows').innerHTML = filtered.length ? filtered.map((account) => `<tr><td><strong>${esc(account.employeeName)}</strong></td><td>${esc(account.employeeCode || '—')}</td><td><span class="account-username">${esc(account.username)}</span></td><td><span class="account-status ${account.active ? '' : 'inactive'}">${account.active ? 'Active' : 'Disabled'}</span></td><td>${esc(when(account.updatedAt))}</td><td><div class="account-row-actions"><button data-edit-account="${esc(account.id)}">Edit</button><button class="delete" data-delete-account="${esc(account.id)}">Delete</button></div></td></tr>`).join('') : `<tr><td colspan="6" class="accounts-empty">${liveEmployeeAccounts.length ? 'No accounts match this search or filter.' : 'No employee accounts yet. Click “Add Employee Account” to create one.'}</td></tr>`;
+    $('employeeAccountRows').innerHTML = filtered.length ? filtered.map((account) => `<tr><td><strong>${esc(account.role === 'employee' ? account.employeeName : account.username)}</strong><small>${account.role === 'employee' ? esc(account.employeeCode || '—') : 'Managed portal account'}</small></td><td><span class="account-role ${esc(account.role)}">${esc(String(account.role).toUpperCase())}</span></td><td><span class="account-username">${esc(account.username)}</span><small>${esc(account.phone || 'No phone bound')}</small></td><td><span class="social-binding phone-binding ${account.socialConnections?.phone ? 'connected' : ''}"></span><span class="social-binding ${account.socialConnections?.google ? 'connected' : ''}">G</span><span class="social-binding ${account.socialConnections?.facebook ? 'connected' : ''}">f</span></td><td><span class="account-status ${account.active ? '' : 'inactive'}">${account.active ? 'Active' : 'Disabled'}</span></td><td>${esc(when(account.updatedAt))}</td><td><div class="account-row-actions"><button data-edit-account="${esc(account.id)}">Edit</button><button class="delete" data-delete-account="${esc(account.id)}">Delete</button></div></td></tr>`).join('') : `<tr><td colspan="7" class="accounts-empty">${liveEmployeeAccounts.length ? 'No accounts match this search or filter.' : 'No managed accounts yet. Click “Add Account” to create one.'}</td></tr>`;
   }
   function openAccountModal(account = null) {
     const assignedIds = new Set(liveEmployeeAccounts.filter((item) => item.id !== account?.id).map((item) => item.employeeId));
     const availableEmployees = accountEmployees.filter((employee) => !assignedIds.has(employee.id));
     $('editingAccountId').value = account?.id || '';
-    $('accountModalTitle').textContent = account ? 'Edit Employee Account' : 'Add Employee Account';
+    $('accountModalTitle').textContent = account ? 'Edit Account' : 'Add Account';
+    $('accountRole').value = account?.role || 'employee';
     $('accountEmployee').innerHTML = availableEmployees.length ? availableEmployees.map((employee) => `<option value="${esc(employee.id)}">${esc(employee.fullName)} · ${esc(employee.employeeCode || employee.id.slice(-8))}</option>`).join('') : '<option value="">All employees already have an account</option>';
     $('accountEmployee').value = account?.employeeId || availableEmployees[0]?.id || '';
-    $('accountEmployee').disabled = !availableEmployees.length;
+    const employeeRole = $('accountRole').value === 'employee';
+    $('accountEmployeeField').hidden = !employeeRole;
+    $('accountEmployee').disabled = !employeeRole || !availableEmployees.length;
+    $('accountEmployee').required = employeeRole;
     $('accountUsername').value = account?.username || '';
+    $('accountPhone').value = account?.phone || '';
     $('accountPassword').value = '';
     $('accountPassword').type = 'password';
     $('toggleAccountPassword').textContent = 'Show';
     $('accountPassword').required = !account;
     $('accountPasswordHelp').textContent = account ? 'Leave blank to keep the current password.' : 'Required for new accounts. Minimum 8 characters.';
     $('accountActiveInput').checked = account?.active !== false;
+    const ownAccount = Boolean(account && currentManagedUser?.managedAccount && account.username === currentManagedUser.username && account.role === currentManagedUser.role);
+    const connections = account?.socialConnections || {};
+    $('modalPhoneBinding').classList.toggle('connected', Boolean(account?.phone));
+    $('modalPhoneStatus').textContent = account?.phone || 'Not bound';
+    [['Google', 'google'], ['Facebook', 'facebook']].forEach(([label, provider]) => {
+      const connected = Boolean(connections[provider]);
+      $(`modal${label}Binding`).classList.toggle('connected', connected);
+      $(`modal${label}Status`).textContent = connected ? 'Connected' : 'Not connected';
+      const bind = $(`modalBind${label}`); bind.disabled = !ownAccount; bind.textContent = connected ? 'Reconnect' : 'Bind';
+    });
+    $('accountBindHelp').textContent = !account ? 'Save the account first. The account owner can bind after signing in.' : ownAccount ? 'You are editing your own account. You can bind or reconnect a provider now.' : 'For security, the account owner must sign in and personally authorize Google or Facebook.';
     $('accountFormMessage').textContent = '';
-    $('saveEmployeeAccount').disabled = !availableEmployees.length;
+    $('saveEmployeeAccount').disabled = employeeRole && !availableEmployees.length;
     $('accountModal').hidden = false;
     (availableEmployees.length ? $('accountUsername') : $('closeAccountModal')).focus();
   }
   async function employeeAccounts() {
-    const [accountResult, employeeResult] = await Promise.all([api('/api/employee-accounts'), api('/api/employees')]);
+    const [accountResult, employeeResult, authResult] = await Promise.all([api('/api/employee-accounts'), api('/api/employees'), api('/api/auth/me')]);
     liveEmployeeAccounts = accountResult.accounts || [];
     accountEmployees = employeeResult.employees || [];
+    currentManagedUser = authResult;
     $('accountTotal').textContent = liveEmployeeAccounts.length;
     $('accountActive').textContent = liveEmployeeAccounts.filter((item) => item.active).length;
-    $('accountMissing').textContent = Math.max(0, accountEmployees.length - liveEmployeeAccounts.length);
+    const employeeAccountCount = liveEmployeeAccounts.filter((item) => item.role === 'employee').length;
+    $('accountMissing').textContent = Math.max(0, accountEmployees.length - employeeAccountCount);
     renderEmployeeAccountRows();
     $('accountsPageMessage').textContent = `${liveEmployeeAccounts.length} account${liveEmployeeAccounts.length === 1 ? '' : 's'} linked to ${accountEmployees.length} employee${accountEmployees.length === 1 ? '' : 's'}.`;
     window.lucide?.createIcons();
@@ -2029,23 +2052,31 @@
     ['closeAccountModal', 'cancelAccountModal'].forEach((id) => $(id)?.addEventListener('click', () => { $('accountModal').hidden = true; }));
     $('accountSearch')?.addEventListener('input', renderEmployeeAccountRows);
     $('accountStatusFilter')?.addEventListener('change', renderEmployeeAccountRows);
+    $('accountRole')?.addEventListener('change', () => {
+      const employeeRole = $('accountRole').value === 'employee';
+      $('accountEmployeeField').hidden = !employeeRole;
+      $('accountEmployee').disabled = !employeeRole;
+      $('accountEmployee').required = employeeRole;
+      $('saveEmployeeAccount').disabled = employeeRole && !$('accountEmployee').value;
+    });
     $('toggleAccountPassword')?.addEventListener('click', () => { const input = $('accountPassword'); const show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggleAccountPassword').textContent = show ? 'Hide' : 'Show'; });
+    $('modalBindPhone')?.addEventListener('click', () => $('accountPhone').focus());
     $('accountModal')?.addEventListener('click', (event) => { if (event.target === $('accountModal')) $('accountModal').hidden = true; });
     $('employeeAccountRows')?.addEventListener('click', async (event) => {
       const edit = event.target.closest('[data-edit-account]');
       if (edit) return openAccountModal(liveEmployeeAccounts.find((item) => item.id === edit.dataset.editAccount));
       const remove = event.target.closest('[data-delete-account]');
-      if (!remove || !confirm('Delete this employee login account?')) return;
+      if (!remove || !confirm('Delete this login account and its social bindings?')) return;
       await api(`/api/employee-accounts/${encodeURIComponent(remove.dataset.deleteAccount)}`, { method: 'DELETE' });
-      toast('Employee account deleted.'); await employeeAccounts();
+      toast('Account deleted.'); await employeeAccounts();
     });
     $('employeeAccountForm')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const id = $('editingAccountId').value;
-      const payload = { employeeId: $('accountEmployee').value, username: $('accountUsername').value.trim(), password: $('accountPassword').value, active: $('accountActiveInput').checked };
+      const payload = { role: $('accountRole').value, employeeId: $('accountRole').value === 'employee' ? $('accountEmployee').value : '', username: $('accountUsername').value.trim(), phone: $('accountPhone').value.trim(), password: $('accountPassword').value, active: $('accountActiveInput').checked };
       try {
         await api(id ? `/api/employee-accounts/${encodeURIComponent(id)}` : '/api/employee-accounts', { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
-        $('accountModal').hidden = true; toast(id ? 'Employee account updated.' : 'Employee account created.'); await employeeAccounts();
+        $('accountModal').hidden = true; toast(id ? 'Account updated.' : 'Account created.'); await employeeAccounts();
       } catch (error) { $('accountFormMessage').textContent = error.message; }
     });
   }

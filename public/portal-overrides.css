@@ -7,6 +7,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   outline-offset: 2px;
 }
 input, select, textarea, form button, .logout { min-height: 44px; }
+.portal-shell main, .hr-shell main { align-self: start; margin: 0; }
+.message.show, .portal-shell .message:not(:empty) { display: block; margin-bottom: 16px; }
+.message[data-type="success"] { color: #08715f; background: #eafff7; }
+.message[data-type="error"] { color: #b52638; background: #fff0f2; }
+.empty-state, .empty-cell { padding: 24px 12px; color: #718096; text-align: center; }
+.status.pending { color: #9a6800; background: #fff6df; }
+.status.approved, .status.present, .status.on_time { color: #08715f; background: #eafff7; }
+.status.rejected, .status.absent { color: #c72f3f; background: #fff0f2; }
+.portal-shell nav button, .hr-shell nav button { transition: background .18s ease, color .18s ease, transform .18s ease; }
+.portal-shell nav button:active, .hr-shell nav button:active { transform: translateY(1px); }
+.linked button { min-width: 92px; min-height: 40px; border: 1px solid #b8d8d1; border-radius: 9px; color: #087a68; background: #effaf7; font-weight: 800; }
+.linked button:disabled { opacity: .6; }
+.day-off { background: #fafbfc; opacity: .72; }
+
+@media (max-width: 900px) {
+.phone-bind-form { display: grid; gap: 8px; padding: 14px 0; border-bottom: 1px solid #dce6eb; }
+.phone-bind-form label { display: flex; justify-content: space-between; gap: 12px; color: #152843; }
+.phone-bind-form label span { color: #74849c; font-size: 12px; font-weight: 500; }
+.phone-bind-form > div { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.phone-bind-form input { min-width: 0; height: 42px; padding: 0 12px 0 42px; border: 1px solid #cfe0e5; border-radius: 10px; background: #fff; }
+.phone-bind-form button { min-width: 86px; }
+.phone-bind-form .phone-icon { position: absolute; z-index: 1; left: 13px; top: 12px; width: 17px; height: 17px; background: #607089; mask: url('/icons/phone.svg') center/contain no-repeat; pointer-events: none; }
 
 @media (max-width: 900px) {
   .portal-shell, .hr-shell { grid-template-columns: minmax(0, 1fr); }
