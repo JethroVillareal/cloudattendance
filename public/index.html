@@ -56,7 +56,7 @@
               <span class="login-field-icon" aria-hidden="true">@</span>
               <input id="loginUsername" name="username" autocomplete="username" placeholder="Enter your username">
             </div>
-            <div class="login-label-row"><label for="loginPassword">Password</label></div>
+            <div class="login-label-row"><label for="loginPassword">Password</label><button id="forgotPasswordBtn" type="button">Forgot password?</button></div>
             <div class="login-input-wrap">
               <span class="login-field-icon" aria-hidden="true">•</span>
               <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Enter your password">
@@ -67,6 +67,11 @@
           <p id="loginMessage" class="login-message" role="alert" aria-live="polite"></p>
           <button id="loginSubmit" class="login-submit" type="submit"><span>Sign in securely</span><span aria-hidden="true">→</span></button>
         </form>
+        <div class="login-divider"><span>Or continue with</span></div>
+        <div class="login-socials">
+          <button class="login-social" type="button" data-social-provider="Google"><img src="/icons/google.svg" alt=""><b>Continue with Google</b></button>
+          <button class="login-social" type="button" data-social-provider="Facebook"><img src="/icons/facebook.svg" alt=""><b>Continue with Facebook</b></button>
+        </div>
         <p class="login-footer">Protected attendance workspace · Asia/Manila</p>
       </div>
       <div class="login-panel-footer"><span>Privacy</span><span>Security</span><span>Help</span></div>

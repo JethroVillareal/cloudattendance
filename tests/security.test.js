@@ -67,8 +67,11 @@ test('settings clamp unsafe operational values', () => {
   assert.equal(settings.esp32DisplayDurationMs, 15000);
 });
 
-test('only the login API is public', () => {
+test('only authentication entry points are public', () => {
   assert.equal(isPublicApi('/api/auth/login', 'POST'), true);
+  assert.equal(isPublicApi('/api/auth/password-reset-request', 'POST'), true);
+  assert.equal(isPublicApi('/api/auth/oauth/google', 'GET'), true);
+  assert.equal(isPublicApi('/api/auth/oauth/facebook/callback', 'GET'), true);
   assert.equal(isPublicApi('/api/employees', 'GET'), false);
   assert.equal(isPublicApi('/api/settings', 'POST'), false);
   assert.equal(isPublicApi('/api/testing/clear-attendance', 'POST'), false);

@@ -33,6 +33,11 @@ const UNRECORDED_LOG_RETENTION_HOURS = Number(process.env.UNRECORDED_LOG_RETENTI
 const MAX_UNRECORDED_ATTENDANCE_LOGS = Number(process.env.MAX_UNRECORDED_ATTENDANCE_LOGS || 50);
 const REQUESTS_PER_MINUTE = Math.max(30, Number(process.env.REQUESTS_PER_MINUTE || 300));
 const AUTH_ATTEMPTS_PER_15_MINUTES = Math.max(3, Number(process.env.AUTH_ATTEMPTS_PER_15_MINUTES || 10));
+const APP_BASE_URL = String(process.env.APP_BASE_URL || '').replace(/\/$/, '');
+const GOOGLE_OAUTH_CLIENT_ID = String(process.env.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+const GOOGLE_OAUTH_CLIENT_SECRET = String(process.env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim();
+const FACEBOOK_OAUTH_CLIENT_ID = String(process.env.FACEBOOK_OAUTH_CLIENT_ID || '').trim();
+const FACEBOOK_OAUTH_CLIENT_SECRET = String(process.env.FACEBOOK_OAUTH_CLIENT_SECRET || '').trim();
 const SESSION_TTL_MS = Math.max(15 * 60 * 1000, Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60 * 1000);
 const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 const ENABLE_TEST_ENDPOINTS = process.env.ENABLE_TEST_ENDPOINTS === 'true';
@@ -71,6 +76,7 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 const sessions = new Map();
 const rateBuckets = new Map();
+const oauthStates = new Map();
 let cloudDb = null;
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -1021,6 +1027,68 @@ function roleHomePath(role) {
   if (role === 'employee') return '/employee';
   if (role === 'hr') return '/hr';
   return '/dashboard';
+}
+
+function createBrowserSession(req, res, account) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS, ip: requestIp(req), role: account.role, username: account.username, employeeId: account.employeeId || '' });
+  const secure = String(getHeader(req, 'x-forwarded-proto') || '').toLowerCase() === 'https';
+  res.setHeader('Set-Cookie', `gms_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
+}
+
+async function handlePasswordResetRequest(res, body) {
+  const username = cleanDisplayText(body.username || '', 120).toLowerCase();
+  if (!username) return sendJson(res, 400, { code: 'USERNAME_REQUIRED', message: 'Enter the username for the account.' });
+  const db = loadDb();
+  const account = db.employeeAccounts.find((item) => item.active !== false && item.username === username);
+  if (account) {
+    const employee = requireEmployee(db, account.employeeId);
+    createNotification(db, { employeeId: account.employeeId, type: 'SECURITY', title: 'Password reset requested', message: `${employee?.fullName || username} requested a password reset for ${username}. HR or an administrator must update the account credentials.` });
+    saveDb(db);
+  }
+  sendJson(res, 200, { ok: true, message: 'If the account exists, HR or an administrator has been notified.' });
+}
+
+function oauthConfig(provider) {
+  if (provider === 'google') return GOOGLE_OAUTH_CLIENT_ID && GOOGLE_OAUTH_CLIENT_SECRET ? { clientId: GOOGLE_OAUTH_CLIENT_ID, secret: GOOGLE_OAUTH_CLIENT_SECRET, authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', profile: 'https://openidconnect.googleapis.com/v1/userinfo', scope: 'openid email profile' } : null;
+  if (provider === 'facebook') return FACEBOOK_OAUTH_CLIENT_ID && FACEBOOK_OAUTH_CLIENT_SECRET ? { clientId: FACEBOOK_OAUTH_CLIENT_ID, secret: FACEBOOK_OAUTH_CLIENT_SECRET, authorize: 'https://www.facebook.com/v23.0/dialog/oauth', token: 'https://graph.facebook.com/v23.0/oauth/access_token', profile: 'https://graph.facebook.com/me?fields=id,name,email', scope: 'email,public_profile' } : null;
+  return null;
+}
+
+function oauthCallbackUrl(req, provider) {
+  const origin = APP_BASE_URL || `${String(getHeader(req, 'x-forwarded-proto') || 'http').split(',')[0]}://${req.headers.host}`;
+  return `${origin}/api/auth/oauth/${provider}/callback`;
+}
+
+function handleOauthStart(req, res, url, provider) {
+  const config = oauthConfig(provider);
+  if (!config) return sendJson(res, 503, { code: 'OAUTH_NOT_CONFIGURED', message: `${provider[0].toUpperCase() + provider.slice(1)} sign-in needs its OAuth client ID and secret in .env.` });
+  const state = crypto.randomBytes(24).toString('base64url');
+  const session = validSession(req);
+  oauthStates.set(state, { provider, employeeId: session?.role === 'employee' ? session.employeeId : '', expiresAt: Date.now() + 10 * 60 * 1000 });
+  const target = new URL(config.authorize);
+  target.searchParams.set('client_id', config.clientId); target.searchParams.set('redirect_uri', oauthCallbackUrl(req, provider));
+  target.searchParams.set('response_type', 'code'); target.searchParams.set('scope', config.scope); target.searchParams.set('state', state);
+  send(res, 302, '', { Location: target.toString() });
+}
+
+async function handleOauthCallback(req, res, url, provider) {
+  const stateKey = url.searchParams.get('state') || ''; const saved = oauthStates.get(stateKey); oauthStates.delete(stateKey);
+  if (!saved || saved.provider !== provider || saved.expiresAt < Date.now()) return send(res, 302, '', { Location: '/?authError=OAuth%20request%20expired' });
+  const config = oauthConfig(provider); const code = url.searchParams.get('code');
+  if (!config || !code) return send(res, 302, '', { Location: '/?authError=OAuth%20authorization%20was%20cancelled' });
+  try {
+    const tokenUrl = new URL(config.token); const params = new URLSearchParams({ client_id: config.clientId, client_secret: config.secret, redirect_uri: oauthCallbackUrl(req, provider), code, grant_type: 'authorization_code' });
+    const tokenResponse = provider === 'google' ? await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params }) : await fetch(`${tokenUrl}?${params}`);
+    const token = await tokenResponse.json(); if (!token.access_token) throw new Error('Token exchange failed');
+    const profileUrl = new URL(config.profile); if (provider === 'facebook') profileUrl.searchParams.set('access_token', token.access_token);
+    const profileResponse = await fetch(profileUrl, provider === 'google' ? { headers: { Authorization: `Bearer ${token.access_token}` } } : {}); const profile = await profileResponse.json();
+    const email = String(profile.email || '').trim().toLowerCase(); const db = loadDb();
+    const dbAccount = db.employeeAccounts.find((item) => item.active !== false && item.username === email && (!saved.employeeId || item.employeeId === saved.employeeId));
+    if (!dbAccount) return send(res, 302, '', { Location: '/?authError=No%20active%20employee%20account%20matches%20that%20email' });
+    createBrowserSession(req, res, { role: 'employee', username: dbAccount.username, employeeId: dbAccount.employeeId });
+    return send(res, 302, '', { Location: '/employee' });
+  } catch { return send(res, 302, '', { Location: '/?authError=Social%20sign-in%20failed' }); }
 }
 
 function normalizeWorkflowStatus(value, allowed, fallback = 'PENDING') {
@@ -2612,7 +2680,7 @@ function routeStatic(req, res, pathname) {
 }
 
 function isPublicApi(pathname, method) {
-  return method === 'POST' && pathname === '/api/auth/login';
+  return (method === 'POST' && ['/api/auth/login', '/api/auth/password-reset-request'].includes(pathname)) || (method === 'GET' && /^\/api\/auth\/oauth\/(google|facebook)(\/callback)?$/.test(pathname));
 }
 
 function publicEmployeeAccount(account, db) {
@@ -2672,10 +2740,7 @@ async function handleAuthLogin(req, res) {
     return;
   }
   const role = account.role;
-  const token = crypto.randomBytes(32).toString('base64url');
-  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS, ip, role, username, employeeId: account?.employeeId || '' });
-  const secure = String(getHeader(req, 'x-forwarded-proto') || '').toLowerCase() === 'https';
-  res.setHeader('Set-Cookie', `gms_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
+  createBrowserSession(req, res, { role, username, employeeId: account?.employeeId || '' });
   const redirectTo = roleHomePath(role);
   sendJson(res, 200, { ok: true, role, username, employeeId: account?.employeeId || '', redirectTo, expiresInHours: SESSION_TTL_MS / 3600000 });
 }
@@ -2796,6 +2861,10 @@ async function handleRequest(req, res) {
       sendJson(res, 200, { attendance: db.attendance.slice(0, limit) });
       return;
     }
+
+    if (method === 'POST' && pathname === '/api/auth/password-reset-request') { await handlePasswordResetRequest(res, await readBody(req)); return; }
+    const oauthMatch = pathname.match(/^\/api\/auth\/oauth\/(google|facebook)(\/callback)?$/);
+    if (method === 'GET' && oauthMatch) { if (oauthMatch[2]) await handleOauthCallback(req, res, url, oauthMatch[1]); else handleOauthStart(req, res, url, oauthMatch[1]); return; }
 
     if (method === 'GET' && pathname === '/api/employee-accounts') return handleGetEmployeeAccounts(res);
     if (method === 'POST' && pathname === '/api/employee-accounts') return handleSaveEmployeeAccount(res, await readBody(req));

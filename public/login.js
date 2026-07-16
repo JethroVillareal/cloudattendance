@@ -53,6 +53,24 @@ async function submitLogin(event) {
 
 byId('toggleLoginPassword').addEventListener('click', () => toggleSecret('loginPassword', 'toggleLoginPassword', 'password'));
 byId('loginForm').addEventListener('submit', submitLogin);
+byId('forgotPasswordBtn').addEventListener('click', async () => {
+  const username = byId('loginUsername').value.trim() || window.prompt('Enter the username for the account:');
+  if (!username) return;
+  setMessage('Sending your reset request...', 'working');
+  try {
+    const response = await fetch('/api/auth/password-reset-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.message || 'Could not submit the reset request.');
+    setMessage(result.message, 'success');
+  } catch (error) { setMessage(error.message); }
+});
+document.querySelectorAll('[data-social-provider]').forEach((button) => button.addEventListener('click', () => {
+  button.disabled = true;
+  setMessage(`Connecting to ${button.dataset.socialProvider}...`, 'working');
+  window.location.assign(`/api/auth/oauth/${button.dataset.socialProvider.toLowerCase()}`);
+}));
+const authError = new URLSearchParams(location.search).get('authError');
+if (authError) { setMessage(authError); history.replaceState({}, '', '/'); }
 const rememberedUsername = localStorage.getItem('gmsRememberedUsername') || '';
 if (rememberedUsername) {
   byId('loginUsername').value = rememberedUsername;
