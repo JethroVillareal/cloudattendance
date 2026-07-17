@@ -1,9 +1,77 @@
 'use strict';
-// HR dashboard behavior.
-const $ = id => document.getElementById(id); const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); let state = { employees: [], leaves: [], corrections: [], notifications: [], cards: [] };
-async function api(path, options = {}) { const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } }); const data = await response.json().catch(() => ({})); if (response.status === 401) { location.replace('/'); throw new Error('Please sign in again.') } if (response.status === 403) { location.replace('/dashboard'); throw new Error('HR access is required.') } if (!response.ok) throw new Error(data.message || `Request failed (${response.status}).`); return data }
-function message(text) { $('message').textContent = text; $('message').classList.add('show'); setTimeout(() => $('message').classList.remove('show'), 3500) }
-function render() { const present = state.cards.filter(x => /PRESENT|LATE/.test(x.status || '')).length, pending = state.leaves.filter(x => x.status === 'PENDING').length + state.corrections.filter(x => x.status === 'PENDING').length; $('summary').innerHTML = [['Employees', state.employees.filter(x => x.active !== false).length], ['Present today', present], ['Pending requests', pending], ['Notifications', state.notifications.length]].map(x => `<article><span>${x[0]}</span><strong>${x[1]}</strong></article>`).join(''); $('attendanceRows').innerHTML = state.cards.map(x => `<tr><td><strong>${esc(x.fullName)}</strong></td><td>${esc(x.schedule || '—')}</td><td>${esc(x.timeIn || '—')}</td><td>${esc(x.timeOut || '—')}</td><td><span class="status">${esc(x.status || 'No record')}</span></td></tr>`).join('') || '<tr><td colspan="5">No attendance records today.</td></tr>'; $('employeeGrid').innerHTML = state.employees.map(x => `<div class="employee"><strong>${esc(x.fullName)}</strong><span>${esc(x.employeeCode || x.id)} · ${x.active === false ? 'Inactive' : 'Active'}</span><span>Fingerprint: ${esc(x.fingerprintId ?? 'Not linked')}</span></div>`).join('') || 'No employees yet.'; renderRequests('leaveRows', state.leaves, 'leave'); renderRequests('correctionRows', state.corrections, 'correction'); $('notificationRows').innerHTML = state.notifications.map(x => `<div class="notification"><strong>${esc(x.title)}</strong><p>${esc(x.message)} · ${new Date(x.createdAt).toLocaleString()}</p></div>`).join('') || 'No notifications.' }
-function renderRequests(target, rows, type) { $(target).innerHTML = rows.map(x => `<div class="request"><div class="request-head"><strong>${esc(x.employeeName)}</strong><span class="status">${esc(x.status)}</span></div><p>${type === 'leave' ? `${esc(x.leaveType)} · ${esc(x.fromDate)} to ${esc(x.toDate)}` : `${esc(x.dateKey)} · ${esc(x.requestedTimeIn || '—')} to ${esc(x.requestedTimeOut || '—')}`}<br>${esc(x.reason || 'No reason provided')}</p><div class="actions"><button data-review="${type}" data-id="${esc(x.id)}" data-status="APPROVED" ${x.status !== 'PENDING' ? 'disabled' : ''}>Approve</button><button class="reject" data-review="${type}" data-id="${esc(x.id)}" data-status="REJECTED" ${x.status !== 'PENDING' ? 'disabled' : ''}>Reject</button></div></div>`).join('') || 'No requests.' }
-async function load() { const today = new Date().toISOString().slice(0, 10); const [me, settings, employees, timecard, leaves, corrections, notifications] = await Promise.all([api('/api/auth/me'), api('/api/settings'), api('/api/employees'), api(`/api/time-card?from=${today}&to=${today}`), api('/api/leave-requests'), api('/api/correction-requests'), api('/api/notifications')]); if (me.role !== 'hr') { location.replace(me.role === 'employee' ? '/employee' : '/dashboard'); return } $('branchLabel').textContent = `${settings.settings.branchName || 'Main Branch'} · Signed in as ${me.username}`; state = { employees: employees.employees || [], cards: timecard.timeCards || [], leaves: leaves.leaveRequests || [], corrections: corrections.correctionRequests || [], notifications: notifications.notifications || [] }; render() }
-document.querySelectorAll('nav [data-section]').forEach(b => b.onclick = () => { document.querySelectorAll('nav button,.page').forEach(x => x.classList.remove('active')); b.classList.add('active'); $(b.dataset.section).classList.add('active') }); document.addEventListener('click', async e => { const b = e.target.closest('[data-review]'); if (!b) return; b.disabled = true; try { await api(`/api/${b.dataset.review === 'leave' ? 'leave-requests' : 'correction-requests'}/${encodeURIComponent(b.dataset.id)}/review`, { method: 'PATCH', body: JSON.stringify({ status: b.dataset.status }) }); await load(); message(`Request ${b.dataset.status.toLowerCase()}.`) } catch (error) { message(error.message); b.disabled = false } }); $('refreshBtn').onclick = () => load().catch(e => message(e.message)); $('logoutBtn').onclick = async () => { await api('/api/auth/logout', { method: 'POST' }); location.replace('/') }; load().catch(e => message(e.message));
+
+const $ = (id) => document.getElementById(id);
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+let state = { employees: [], leaves: [], corrections: [], notifications: [], cards: [] };
+let messageTimer = null;
+
+async function api(path, options = {}) {
+  const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 401) { location.replace('/'); throw new Error('Please sign in again.'); }
+  if (response.status === 403) { location.replace('/dashboard'); throw new Error('HR access is required.'); }
+  if (!response.ok) throw new Error(data.message || `Request failed (${response.status}).`);
+  return data;
+}
+
+function message(text, type = 'info') {
+  clearTimeout(messageTimer); const box = $('message'); box.textContent = text; box.dataset.type = type; box.classList.add('show');
+  messageTimer = setTimeout(() => box.classList.remove('show'), 4500);
+}
+
+function setBusy(button, busy, label) {
+  if (!button.dataset.label) button.dataset.label = button.textContent.trim();
+  button.disabled = busy; button.textContent = busy ? label : button.dataset.label;
+}
+
+function empty(text) { return `<div class="empty-state">${esc(text)}</div>`; }
+function renderRequests(target, rows, type) {
+  $(target).innerHTML = rows.map((row) => `<article class="request"><div class="request-head"><strong>${esc(row.employeeName)}</strong><span class="status ${esc(String(row.status).toLowerCase())}">${esc(row.status)}</span></div><p>${type === 'leave' ? `${esc(row.leaveType)} · ${esc(row.fromDate)} to ${esc(row.toDate)}` : `${esc(row.dateKey)} · ${esc(row.requestedTimeIn || '—')} to ${esc(row.requestedTimeOut || '—')}`}<br>${esc(row.reason || 'No reason provided')}</p>${row.reviewRemarks ? `<p><strong>Review note:</strong> ${esc(row.reviewRemarks)}</p>` : ''}<div class="actions"><button data-review="${type}" data-id="${esc(row.id)}" data-status="APPROVED" ${row.status !== 'PENDING' ? 'disabled' : ''}>Approve</button><button class="reject" data-review="${type}" data-id="${esc(row.id)}" data-status="REJECTED" ${row.status !== 'PENDING' ? 'disabled' : ''}>Reject</button></div></article>`).join('') || empty(`No ${type === 'leave' ? 'leave' : 'correction'} requests.`);
+}
+
+function render() {
+  const present = state.cards.filter((row) => /PRESENT|LATE/.test(row.status || '')).length;
+  const pending = [...state.leaves, ...state.corrections].filter((row) => row.status === 'PENDING').length;
+  $('summary').innerHTML = [['Active employees', state.employees.filter((row) => row.active !== false).length], ['Present today', present], ['Pending requests', pending], ['Notifications', state.notifications.length]].map(([label, value]) => `<article><span>${label}</span><strong>${value}</strong></article>`).join('');
+  $('attendanceRows').innerHTML = state.cards.map((row) => `<tr><td><strong>${esc(row.fullName)}</strong></td><td>${esc(row.schedule || '—')}</td><td>${esc(row.timeIn || '—')}</td><td>${esc(row.timeOut || '—')}</td><td><span class="status ${esc(String(row.status || '').toLowerCase())}">${esc(row.status || 'No record')}</span></td></tr>`).join('') || '<tr><td colspan="5" class="empty-cell">No attendance records today.</td></tr>';
+  $('employeeGrid').innerHTML = state.employees.map((row) => `<article class="employee"><strong>${esc(row.fullName)}</strong><span>${esc(row.employeeCode || row.id)} · ${row.active === false ? 'Inactive' : 'Active'}</span><span>Fingerprint: ${esc(row.fingerprintId ?? 'Not linked')}</span><span>Shift: ${esc(row.shiftStart || '—')} – ${esc(row.shiftEnd || '—')}</span></article>`).join('') || empty('No employees yet.');
+  renderRequests('leaveRows', state.leaves, 'leave'); renderRequests('correctionRows', state.corrections, 'correction');
+  $('notificationRows').innerHTML = state.notifications.map((row) => `<article class="notification"><strong>${esc(row.title)}</strong><p>${esc(row.message)} · ${new Date(row.createdAt).toLocaleString()}</p></article>`).join('') || empty('No notifications.');
+}
+
+async function load() {
+  const today = new Date().toLocaleDateString('en-CA');
+  const [me, settings, employees, timecard, leaves, corrections, notifications] = await Promise.all([api('/api/auth/me'), api('/api/settings'), api('/api/employees'), api(`/api/time-card?from=${today}&to=${today}`), api('/api/leave-requests'), api('/api/correction-requests'), api('/api/notifications')]);
+  if (me.role !== 'hr') { location.replace(me.role === 'employee' ? '/employee' : '/dashboard'); return; }
+  $('branchLabel').textContent = `${settings.settings.branchName || 'Main Branch'} · Signed in as ${me.username}`;
+  $('accountPhoneInput').value = me.phone || '';
+  $('phoneLinkStatus').textContent = me.phone || 'Not bound';
+  $('bindPhoneBtn').textContent = me.phone ? 'Update' : 'Bind';
+  ['google', 'facebook'].forEach((provider) => { const connected = Boolean(me.socialConnections?.[provider]); const status = $(`${provider}LinkStatus`); const button = document.querySelector(`[data-link-provider="${provider}"]`); if (status) status.textContent = connected ? 'Connected' : 'Not connected'; if (button) button.textContent = connected ? 'Reconnect' : 'Connect'; });
+  if ($('managedAccountNote')) $('managedAccountNote').textContent = me.managedAccount ? 'This HR account can bind social sign-in.' : 'Create a managed HR account with this same username in Admin → User Accounts before binding social sign-in.';
+  state = { employees: employees.employees || [], cards: timecard.timeCards || [], leaves: leaves.leaveRequests || [], corrections: corrections.correctionRequests || [], notifications: notifications.notifications || [] };
+  render();
+}
+
+document.querySelectorAll('nav [data-section]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('nav [data-section],.page').forEach((item) => item.classList.remove('active'));
+  button.classList.add('active'); $(button.dataset.section).classList.add('active'); history.replaceState({}, '', `#${button.dataset.section}`);
+}));
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-review]'); if (!button) return;
+  const remarks = button.dataset.status === 'REJECTED' ? window.prompt('Reason for rejection (required):', '') : window.prompt('Approval note (optional):', '');
+  if (remarks === null) return;
+  if (button.dataset.status === 'REJECTED' && !remarks.trim()) return message('Enter a reason before rejecting a request.', 'error');
+  setBusy(button, true, button.dataset.status === 'APPROVED' ? 'Approving...' : 'Rejecting...');
+  try { await api(`/api/${button.dataset.review === 'leave' ? 'leave-requests' : 'correction-requests'}/${encodeURIComponent(button.dataset.id)}/review`, { method: 'PATCH', body: JSON.stringify({ status: button.dataset.status, remarks: remarks.trim() }) }); await load(); message(`Request ${button.dataset.status.toLowerCase()}.`, 'success'); }
+  catch (error) { message(error.message, 'error'); setBusy(button, false); }
+});
+
+$('refreshBtn').addEventListener('click', async () => { setBusy($('refreshBtn'), true, 'Refreshing...'); try { await load(); message('HR workspace refreshed.', 'success'); } catch (error) { message(error.message, 'error'); } finally { setBusy($('refreshBtn'), false); } });
+$('phoneBindForm').addEventListener('submit', async (event) => { event.preventDefault(); const button = $('bindPhoneBtn'); setBusy(button, true, 'Saving...'); try { const result = await api('/api/auth/phone', { method: 'PATCH', body: JSON.stringify({ phone: $('accountPhoneInput').value.trim() }) }); $('accountPhoneInput').value = result.phone; $('phoneLinkStatus').textContent = result.phone; button.dataset.label = 'Update'; message('Phone number bound to your HR account.', 'success'); } catch (error) { message(error.message, 'error'); } finally { setBusy(button, false); } });
+$('logoutBtn').addEventListener('click', async () => { setBusy($('logoutBtn'), true, 'Signing out...'); try { await api('/api/auth/logout', { method: 'POST' }); } finally { location.replace('/'); } });
+
+const initialSection = location.hash.slice(1);
+if (initialSection && document.querySelector(`[data-section="${CSS.escape(initialSection)}"]`)) document.querySelector(`[data-section="${CSS.escape(initialSection)}"]`).click();
+load().catch((error) => message(error.message, 'error'));

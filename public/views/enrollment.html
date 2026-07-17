@@ -1357,6 +1357,7 @@
     }
   </style>
   <link rel="stylesheet" href="/standalone-shared.css?v=20260714-88" />
+  <link rel="stylesheet" href="/standalone-overrides.css?v=20260716-1" />
 </head>
 
 <body class="live-page-entering">
@@ -1612,14 +1613,20 @@
             <div class="form-group">
               <label for="phone">Phone</label>
 
-              <div class="form-control">
+              <div class="form-control phone-control">
+                <span class="phone-field-icon" aria-hidden="true"></span>
                 <input
                   id="phone"
                   name="phone"
                   type="tel"
-                  placeholder="Enter phone number"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  maxlength="20"
+                  aria-describedby="phoneHelp"
+                  placeholder="e.g. +63 917 123 4567"
                 />
               </div>
+              <small id="phoneHelp" class="field-help">Include the country code when available.</small>
             </div>
 
             <div class="form-group">

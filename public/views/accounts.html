@@ -4,22 +4,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Employee Accounts · GMS Attendance</title>
+  <title>User Accounts · GMS Attendance</title>
   <link rel="stylesheet" href="/standalone-shared.css?v=20260715-accounts2">
+  <link rel="stylesheet" href="/standalone-overrides.css?v=20260716-phone2">
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
-<body class="page-accounts">
+<body class="page-accounts" data-auth-mode="link">
   <div class="app">
     <aside class="sidebar"></aside>
     <div class="content">
       <main class="main accounts-main">
         <header class="accounts-head">
           <div><span>ACCESS MANAGEMENT</span>
-            <h1>Employee Accounts</h1>
-            <p>Create and manage sign-in access for the Employee Dashboard.</p>
+            <h1>User Accounts</h1>
+            <p>Manage Employee, HR, and Admin sign-in access and social binding.</p>
           </div>
-          <button id="addEmployeeAccount" type="button"><i data-lucide="user-plus"></i> Add Employee Account</button>
+          <button id="addEmployeeAccount" type="button"><i data-lucide="user-plus"></i> Add Account</button>
         </header>
         <section class="accounts-summary" aria-label="Account summary">
           <article><span>Total accounts</span><strong id="accountTotal">—</strong></article>
@@ -41,9 +42,10 @@
             <table>
               <thead>
                 <tr>
-                  <th>Employee</th>
-                  <th>Employee ID</th>
+                  <th>Account / Employee</th>
+                  <th>Role</th>
                   <th>Username</th>
+                  <th>Account binding</th>
                   <th>Status</th>
                   <th>Last updated</th>
                   <th><span class="sr-only">Actions</span></th>
@@ -51,7 +53,7 @@
               </thead>
               <tbody id="employeeAccountRows">
                 <tr>
-                  <td colspan="6">Loading accounts...</td>
+                  <td colspan="7">Loading accounts...</td>
                 </tr>
               </tbody>
             </table>
@@ -65,29 +67,39 @@
     <form id="employeeAccountForm">
       <header>
         <div>
-          <h2 id="accountModalTitle">Add Employee Account</h2>
-          <p>These credentials open only the linked Employee Dashboard.</p>
+          <h2 id="accountModalTitle">Add Account</h2>
+          <p>Assign the correct portal role and optional employee record.</p>
         </div><button id="closeAccountModal" type="button" aria-label="Close">×</button>
       </header>
       <input id="editingAccountId" type="hidden">
-      <label><span>Employee</span><select id="accountEmployee" required></select><small id="accountEmployeeHelp">Only
+      <label><span>Portal role</span><select id="accountRole" required><option value="employee">Employee</option><option value="hr">HR</option><option value="admin">Admin</option></select><small>Role determines the portal and API permissions.</small></label>
+      <label id="accountEmployeeField"><span>Employee record</span><select id="accountEmployee"></select><small id="accountEmployeeHelp">Only
           employees without an account are available.</small></label>
       <label><span>Username</span><input id="accountUsername" required minlength="3" maxlength="40" autocomplete="off"
           placeholder="e.g. juan.delacruz"><small>Use 3–40 letters, numbers, dots, underscores, or
           dashes.</small></label>
+      <label><span>Bound phone number</span><span class="account-phone-field"><span aria-hidden="true"></span><input id="accountPhone" type="tel"
+          inputmode="tel" autocomplete="tel" placeholder="e.g. +63 917 123 4567"></span><small>Optional. Sign in using this phone number and the account password.</small></label>
       <label><span>Password</span><span class="account-password-field"><input id="accountPassword" type="password"
             minlength="8" autocomplete="new-password" placeholder="Minimum 8 characters"><button
             id="toggleAccountPassword" type="button">Show</button></span><small id="accountPasswordHelp">Required for
           new accounts. Minimum 8 characters.</small></label>
-      <label class="account-active"><input id="accountActiveInput" type="checkbox" checked><span>Allow this employee to
+      <label class="account-active"><input id="accountActiveInput" type="checkbox" checked><span>Allow this account to
           sign in</span></label>
+      <section class="account-bind-box" aria-labelledby="accountBindTitle">
+        <div><strong id="accountBindTitle">Account binding</strong><small id="accountBindHelp">Bind a phone number here. Google and Facebook require authorization by the account owner.</small></div>
+        <div class="account-bind-provider"><span class="social-binding phone-binding" id="modalPhoneBinding"></span><span><b>Phone</b><small id="modalPhoneStatus">Not bound</small></span><button id="modalBindPhone" type="button">Use field</button></div>
+        <div class="account-bind-provider"><span class="social-binding" id="modalGoogleBinding">G</span><span><b>Google</b><small id="modalGoogleStatus">Not connected</small></span><button id="modalBindGoogle" type="button" data-link-provider="google">Bind</button></div>
+        <div class="account-bind-provider"><span class="social-binding" id="modalFacebookBinding">f</span><span><b>Facebook</b><small id="modalFacebookStatus">Not connected</small></span><button id="modalBindFacebook" type="button" data-link-provider="facebook">Bind</button></div>
+      </section>
       <p id="accountFormMessage" role="alert"></p>
       <footer><button id="cancelAccountModal" type="button">Cancel</button><button id="saveEmployeeAccount"
           class="primary" type="submit"><i data-lucide="save"></i> Save Account</button></footer>
     </form>
   </div>
   <div id="toast"><span id="toastMessage"></span></div>
-  <script src="/functional-pages.js?v=20260715-accounts2"></script>
+  <script src="/functional-pages.js?v=20260716-accounts3"></script>
+  <script type="module" src="/firebase-auth.js?v=20260716-6"></script>
 </body>
 
 </html>

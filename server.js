@@ -33,6 +33,13 @@ const UNRECORDED_LOG_RETENTION_HOURS = Number(process.env.UNRECORDED_LOG_RETENTI
 const MAX_UNRECORDED_ATTENDANCE_LOGS = Number(process.env.MAX_UNRECORDED_ATTENDANCE_LOGS || 50);
 const REQUESTS_PER_MINUTE = Math.max(30, Number(process.env.REQUESTS_PER_MINUTE || 300));
 const AUTH_ATTEMPTS_PER_15_MINUTES = Math.max(3, Number(process.env.AUTH_ATTEMPTS_PER_15_MINUTES || 10));
+const APP_BASE_URL = String(process.env.APP_BASE_URL || '').replace(/\/$/, '');
+const GOOGLE_OAUTH_CLIENT_ID = String(process.env.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+const GOOGLE_OAUTH_CLIENT_SECRET = String(process.env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim();
+const FACEBOOK_OAUTH_CLIENT_ID = String(process.env.FACEBOOK_OAUTH_CLIENT_ID || '').trim();
+const FACEBOOK_OAUTH_CLIENT_SECRET = String(process.env.FACEBOOK_OAUTH_CLIENT_SECRET || '').trim();
+const FIREBASE_WEB_API_KEY = String(process.env.FIREBASE_WEB_API_KEY || 'AIzaSyA10KnHTBE4pxZLK7nMHwSaRSWeiK4cegU').trim();
+const FIREBASE_PROJECT_ID = String(process.env.FIREBASE_PROJECT_ID || 'cloud-attendance-3553a').trim();
 const SESSION_TTL_MS = Math.max(15 * 60 * 1000, Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60 * 1000);
 const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 const ENABLE_TEST_ENDPOINTS = process.env.ENABLE_TEST_ENDPOINTS === 'true';
@@ -53,7 +60,7 @@ const DEVICE_API_KEYS = new Map(String(process.env.DEVICE_API_KEYS || '').split(
   return separator > 0 ? [entry.slice(0, separator).trim(), entry.slice(separator + 1).trim()] : ['', ''];
 }).filter(([deviceId, key]) => deviceId && key));
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean);
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const SUPABASE_EMPLOYEE_PHOTOS_BUCKET = String(process.env.SUPABASE_EMPLOYEE_PHOTOS_BUCKET || 'employee-photos').trim();
@@ -71,6 +78,7 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 const sessions = new Map();
 const rateBuckets = new Map();
+const oauthStates = new Map();
 let cloudDb = null;
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -333,12 +341,15 @@ function migrateDb(db) {
   db.correctionRequests = Array.isArray(db.correctionRequests) ? db.correctionRequests : [];
   db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
   db.employeeAccounts = Array.isArray(db.employeeAccounts) ? db.employeeAccounts : [];
-  db.employeeAccounts = db.employeeAccounts.filter((account) => account && account.employeeId && account.username && account.passwordHash && account.passwordSalt).map((account) => ({
+  db.employeeAccounts = db.employeeAccounts.filter((account) => account && account.username && account.passwordHash && account.passwordSalt).map((account) => ({
     id: account.id || createId('account'),
-    employeeId: String(account.employeeId),
+    role: ['admin', 'hr', 'employee'].includes(String(account.role || 'employee').toLowerCase()) ? String(account.role || 'employee').toLowerCase() : 'employee',
+    employeeId: String(account.employeeId || ''),
     username: String(account.username).trim().toLowerCase(),
+    phone: normalizeAccountPhone(account.phone || db.employees.find((employee) => employee.id === account.employeeId)?.phone || ''),
     passwordHash: String(account.passwordHash),
     passwordSalt: String(account.passwordSalt),
+    socialIdentities: account.socialIdentities && typeof account.socialIdentities === 'object' ? account.socialIdentities : {},
     active: account.active !== false,
     createdAt: account.createdAt || nowIso(),
     updatedAt: account.updatedAt || nowIso()
@@ -441,8 +452,8 @@ function securityHeaders(req) {
     ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
-    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources}; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'`,
-    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources} https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://apis.google.com; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com`,
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
@@ -480,7 +491,7 @@ function sendFile(req, res, filePath, contentType) {
       const nonce = crypto.randomBytes(18).toString('base64');
       body = Buffer.from(data.toString('utf8').replace(/<script(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`));
       const imageSources = `'self' data:${SUPABASE_IMAGE_ORIGIN ? ` ${SUPABASE_IMAGE_ORIGIN}` : ''}`;
-      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources}; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'`;
+      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources} https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}' https://www.gstatic.com https://apis.google.com; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com`;
     }
     res.writeHead(200, headers);
     res.end(body);
@@ -603,6 +614,7 @@ function deviceRoute(pathname, method) {
 }
 
 function roleCanAccess(role, pathname, method) {
+  if (pathname === '/api/auth/phone' && method === 'PATCH') return ['admin', 'hr', 'employee'].includes(role);
   if (role === 'admin') return true;
   if (pathname.startsWith('/api/employee-accounts')) return false;
   if (role === 'device') return deviceRoute(pathname, method);
@@ -1008,6 +1020,8 @@ function safePublicEmployee(employee) {
     id: employee.id,
     employeeCode: employee.employeeCode || String(employee.id || '').slice(-8),
     fullName: employee.fullName,
+    email: employee.email || '',
+    phone: employee.phone || '',
     photoUrl: employee.photoUrl || '',
     fingerprintId: employee.fingerprintId,
     fingerprints: activeEmployeeFingerprints(employee),
@@ -1021,6 +1035,16 @@ function safePublicEmployee(employee) {
   };
 }
 
+function normalizeAccountPhone(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return '';
+  if (digits.length === 11 && digits.startsWith('09')) digits = `63${digits.slice(1)}`;
+  else if (digits.length === 10 && digits.startsWith('9')) digits = `63${digits}`;
+  return `+${digits}`;
+}
+
 function shouldRateLimitRequest(pathname, method) {
   return String(pathname || '').startsWith('/api/') && String(method || '').toUpperCase() !== 'OPTIONS';
 }
@@ -1029,6 +1053,92 @@ function roleHomePath(role) {
   if (role === 'employee') return '/employee';
   if (role === 'hr') return '/hr';
   return '/dashboard';
+}
+
+function createBrowserSession(req, res, account) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS, ip: requestIp(req), role: account.role, username: account.username, employeeId: account.employeeId || '' });
+  const secure = String(getHeader(req, 'x-forwarded-proto') || '').toLowerCase() === 'https';
+  res.setHeader('Set-Cookie', `gms_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
+}
+
+async function handlePasswordResetRequest(res, body) {
+  const loginId = cleanDisplayText(body.username || '', 120);
+  const username = loginId.toLowerCase();
+  const phone = normalizeAccountPhone(loginId);
+  if (!username) return sendJson(res, 400, { code: 'USERNAME_REQUIRED', message: 'Enter the username or bound phone number for the account.' });
+  const db = loadDb();
+  const account = db.employeeAccounts.find((item) => item.active !== false && (item.username === username || (phone && normalizeAccountPhone(item.phone) === phone)));
+  if (account) {
+    const employee = requireEmployee(db, account.employeeId);
+    createNotification(db, { employeeId: account.employeeId, type: 'SECURITY', title: 'Password reset requested', message: `${employee?.fullName || username} requested a password reset for ${username}. HR or an administrator must update the account credentials.` });
+    saveDb(db);
+  }
+  sendJson(res, 200, { ok: true, message: 'If the account exists, HR or an administrator has been notified.' });
+}
+
+function oauthConfig(provider) {
+  if (provider === 'google') return GOOGLE_OAUTH_CLIENT_ID && GOOGLE_OAUTH_CLIENT_SECRET ? { clientId: GOOGLE_OAUTH_CLIENT_ID, secret: GOOGLE_OAUTH_CLIENT_SECRET, authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', profile: 'https://openidconnect.googleapis.com/v1/userinfo', scope: 'openid email profile' } : null;
+  if (provider === 'facebook') return FACEBOOK_OAUTH_CLIENT_ID && FACEBOOK_OAUTH_CLIENT_SECRET ? { clientId: FACEBOOK_OAUTH_CLIENT_ID, secret: FACEBOOK_OAUTH_CLIENT_SECRET, authorize: 'https://www.facebook.com/v23.0/dialog/oauth', token: 'https://graph.facebook.com/v23.0/oauth/access_token', profile: 'https://graph.facebook.com/me?fields=id,name,email', scope: 'email,public_profile' } : null;
+  return null;
+}
+
+function oauthCallbackUrl(req, provider) {
+  const origin = APP_BASE_URL || `${String(getHeader(req, 'x-forwarded-proto') || 'http').split(',')[0]}://${req.headers.host}`;
+  return `${origin}/api/auth/oauth/${provider}/callback`;
+}
+
+function handleOauthStart(req, res, url, provider) {
+  const config = oauthConfig(provider);
+  if (!config) {
+    const session = validSession(req);
+    const destination = session ? roleHomePath(session.role || 'employee') : '/';
+    const message = `${provider[0].toUpperCase() + provider.slice(1)} sign-in is not configured. Add its OAuth client ID and secret, then restart the server.`;
+    return send(res, 302, '', { Location: `${destination}?authError=${encodeURIComponent(message)}` });
+  }
+  const state = crypto.randomBytes(24).toString('base64url');
+  const session = validSession(req);
+  const db = loadDb();
+  const account = session
+    ? db.employeeAccounts.find((item) => item.active !== false && item.username === session.username)
+    : null;
+  oauthStates.set(state, {
+    provider,
+    accountId: account?.id || '',
+    expiresAt: Date.now() + 10 * 60 * 1000
+  });
+  const target = new URL(config.authorize);
+  target.searchParams.set('client_id', config.clientId); target.searchParams.set('redirect_uri', oauthCallbackUrl(req, provider));
+  target.searchParams.set('response_type', 'code'); target.searchParams.set('scope', config.scope); target.searchParams.set('state', state);
+  send(res, 302, '', { Location: target.toString() });
+}
+
+async function handleOauthCallback(req, res, url, provider) {
+  const stateKey = url.searchParams.get('state') || ''; const saved = oauthStates.get(stateKey); oauthStates.delete(stateKey);
+  if (!saved || saved.provider !== provider || saved.expiresAt < Date.now()) return send(res, 302, '', { Location: '/?authError=OAuth%20request%20expired' });
+  const config = oauthConfig(provider); const code = url.searchParams.get('code');
+  if (!config || !code) return send(res, 302, '', { Location: '/?authError=OAuth%20authorization%20was%20cancelled' });
+  try {
+    const tokenUrl = new URL(config.token); const params = new URLSearchParams({ client_id: config.clientId, client_secret: config.secret, redirect_uri: oauthCallbackUrl(req, provider), code, grant_type: 'authorization_code' });
+    const tokenResponse = provider === 'google' ? await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params }) : await fetch(`${tokenUrl}?${params}`);
+    const token = await tokenResponse.json(); if (!token.access_token) throw new Error('Token exchange failed');
+    const profileUrl = new URL(config.profile); if (provider === 'facebook') profileUrl.searchParams.set('access_token', token.access_token);
+    const profileResponse = await fetch(profileUrl, provider === 'google' ? { headers: { Authorization: `Bearer ${token.access_token}` } } : {}); const profile = await profileResponse.json();
+    const email = String(profile.email || '').trim().toLowerCase(); const providerId = String(profile.sub || profile.id || ''); const db = loadDb();
+    let dbAccount = saved.accountId
+      ? db.employeeAccounts.find((item) => item.active !== false && item.id === saved.accountId)
+      : db.employeeAccounts.find((item) => item.active !== false && item.socialIdentities?.[provider]?.id === providerId);
+    if (!dbAccount) return send(res, 302, '', { Location: '/?authError=No%20linked%20managed%20account%20was%20found' });
+    if (saved.accountId) {
+      const duplicate = db.employeeAccounts.find((item) => item.id !== dbAccount.id && item.socialIdentities?.[provider]?.id === providerId);
+      if (duplicate) return send(res, 302, '', { Location: `${roleHomePath(dbAccount.role)}?authError=${encodeURIComponent(`This ${provider} account is already connected to another managed account`)}` });
+      dbAccount.socialIdentities = dbAccount.socialIdentities || {};
+      dbAccount.socialIdentities[provider] = { id: providerId, email, name: cleanDisplayText(profile.name || '', 100), linkedAt: nowIso() };
+      dbAccount.updatedAt = nowIso(); saveDb(db);
+    }
+    createBrowserSession(req, res, { role: dbAccount.role || 'employee', username: dbAccount.username, employeeId: dbAccount.employeeId || '' });
+    return send(res, 302, '', { Location: `${roleHomePath(dbAccount.role || 'employee')}?authSuccess=${encodeURIComponent(`${provider[0].toUpperCase() + provider.slice(1)} account connected`)}` });
+  } catch { return send(res, 302, '', { Location: '/?authError=Social%20sign-in%20failed' }); }
 }
 
 function normalizeWorkflowStatus(value, allowed, fallback = 'PENDING') {
@@ -1967,12 +2077,18 @@ function employeePayload(body, existing = null, settings = defaultSettings()) {
 
   if (!fullName) return { error: { status: 400, code: 'FULL_NAME_REQUIRED', message: 'Full name is required.' } };
   if (!fingerprintId && !existing && !allowNoFingerprint) return { error: { status: 400, code: 'INVALID_FINGERPRINT_ID', message: 'fingerprintId must be 1 to 1000.' } };
+  const email = String(body.email ?? existing?.email ?? '').trim().toLowerCase();
+  const phone = String(body.phone ?? existing?.phone ?? '').trim().replace(/\s+/g, ' ');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: { status: 400, code: 'INVALID_EMAIL', message: 'Enter a valid employee email address.' } };
+  if (phone && !/^\+?[0-9 ()-]{7,20}$/.test(phone)) return { error: { status: 400, code: 'INVALID_PHONE', message: 'Enter a valid phone number.' } };
 
   const graceMinutes = Math.max(0, Number(body.graceMinutes ?? settings.graceMinutes));
   const weeklySchedule = normalizeWeeklySchedule(body.weeklySchedule, body.shiftStart || settings.defaultShiftStart, body.shiftEnd || settings.defaultShiftEnd);
 
   return {
     fullName,
+    email,
+    phone,
     employeeCode: cleanDisplayText(body.employeeCode || existing?.employeeCode || '', 40),
     fingerprintId,
     allowNoFingerprint,
@@ -2004,6 +2120,8 @@ async function handleCreateEmployee(res, body) {
     id: employeeId,
     employeeCode: payload.employeeCode || employeeId.slice(-8),
     fullName: payload.fullName,
+    email: payload.email,
+    phone: payload.phone,
     photoUrl: '',
     fingerprintId: payload.fingerprintId || null,
     fingerprints: payload.fingerprintId
@@ -2049,6 +2167,8 @@ async function handleUpdateEmployee(res, employeeId, body) {
 
   const monday = payload.weeklySchedule.monday;
   employee.fullName = payload.fullName;
+  employee.email = payload.email;
+  employee.phone = payload.phone;
   employee.employeeCode = payload.employeeCode || employee.employeeCode;
   if (payload.fingerprintId) {
     employee.fingerprintId = payload.fingerprintId;
@@ -2353,7 +2473,8 @@ function buildPortalPayload(session, url) {
   const summary = timeCards.reduce((out, row) => {
     out.present += /PRESENT|LATE/.test(row.status || '') ? 1 : 0; out.lateMinutes += Number(row.lateMinutes || 0); out.undertimeMinutes += Number(row.earlyOutMinutes || 0); out.overtimeMinutes += Number(row.overtimeMinutes || 0); return out;
   }, { present: 0, lateMinutes: 0, undertimeMinutes: 0, overtimeMinutes: 0 });
-  return { employee: safePublicEmployee(employee), timeCards: timeCards.reverse(), summary, leaveRequests: db.leaveRequests.filter((item) => item.employeeId === employee.id), correctionRequests: db.correctionRequests.filter((item) => item.employeeId === employee.id), notifications: db.notifications.filter((item) => !item.employeeId || item.employeeId === employee.id).slice(0, 100), settings: { branchName: db.settings.branchName } };
+  const account = db.employeeAccounts.find((item) => item.employeeId === employee.id);
+  return { employee: safePublicEmployee(employee), timeCards: timeCards.reverse(), summary, leaveRequests: db.leaveRequests.filter((item) => item.employeeId === employee.id), correctionRequests: db.correctionRequests.filter((item) => item.employeeId === employee.id), notifications: db.notifications.filter((item) => !item.employeeId || item.employeeId === employee.id).slice(0, 100), accountPhone: account?.phone || '', socialConnections: { phone: Boolean(account?.phone), google: Boolean(account?.socialIdentities?.google?.id), facebook: Boolean(account?.socialIdentities?.facebook?.id) }, settings: { branchName: db.settings.branchName } };
 }
 
 function csvEscape(value) {
@@ -2620,12 +2741,47 @@ function routeStatic(req, res, pathname) {
 }
 
 function isPublicApi(pathname, method) {
+<<<<<<< HEAD
   return method === 'POST' && ['/api/auth/login', '/api/auth/check-username'].includes(pathname);
+=======
+  return (method === 'POST' && ['/api/auth/login', '/api/auth/password-reset-request', '/api/auth/firebase'].includes(pathname)) || (method === 'GET' && /^\/api\/auth\/oauth\/(google|facebook)(\/callback)?$/.test(pathname));
+}
+
+async function handleFirebaseAuth(req, res, body) {
+  if (!FIREBASE_WEB_API_KEY || !FIREBASE_PROJECT_ID) return sendJson(res, 503, { code: 'FIREBASE_NOT_CONFIGURED', message: 'Firebase Authentication is not configured.' });
+  const idToken = String(body.idToken || ''); const requestedProvider = String(body.provider || '').toLowerCase(); const mode = body.mode === 'link' ? 'link' : 'login';
+  if (!idToken || !['google', 'facebook'].includes(requestedProvider)) return sendJson(res, 400, { code: 'INVALID_FIREBASE_AUTH', message: 'A Firebase ID token and supported provider are required.' });
+  try {
+    const verification = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(FIREBASE_WEB_API_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) });
+    const verified = await verification.json(); const user = verified.users?.[0];
+    if (!verification.ok || !user || user.validSince === undefined) throw new Error('Firebase rejected the identity token.');
+    const providerName = `${requestedProvider}.com`; const identity = (user.providerUserInfo || []).find((item) => item.providerId === providerName);
+    if (!identity?.rawId) return sendJson(res, 400, { code: 'PROVIDER_MISMATCH', message: `The Firebase account is not authenticated with ${requestedProvider}.` });
+    const db = loadDb(); let account;
+    if (mode === 'link') {
+      const session = validSession(req);
+      if (!session || !['employee', 'hr', 'admin'].includes(session.role)) return sendJson(res, 401, { code: 'ACCOUNT_AUTH_REQUIRED', message: 'Sign in before linking an account.' });
+      const currentAccount = db.employeeAccounts.find((item) => item.active !== false && item.username === session.username);
+      const alreadyLinked = db.employeeAccounts.find((item) => item.id !== currentAccount?.id && item.socialIdentities?.[requestedProvider]?.id === identity.rawId);
+      if (alreadyLinked) return sendJson(res, 409, { code: 'SOCIAL_ACCOUNT_IN_USE', message: `That ${requestedProvider} account is already linked to another employee.` });
+      account = currentAccount;
+      if (!account) return sendJson(res, 404, { code: 'ACCOUNT_NOT_FOUND', message: 'This sign-in is configured through environment credentials. Create a managed account with the same username before linking social login.' });
+      account.socialIdentities = account.socialIdentities || {};
+      account.socialIdentities[requestedProvider] = { id: identity.rawId, firebaseUid: user.localId, email: String(identity.email || user.email || '').toLowerCase(), name: cleanDisplayText(identity.displayName || user.displayName || '', 100), linkedAt: nowIso() };
+      account.updatedAt = nowIso(); saveDb(db);
+    } else {
+      account = db.employeeAccounts.find((item) => item.active !== false && item.socialIdentities?.[requestedProvider]?.id === identity.rawId);
+      if (!account) return sendJson(res, 404, { code: 'SOCIAL_ACCOUNT_NOT_LINKED', message: `This ${requestedProvider} account is not linked yet. Sign in with your username first, then connect it in Account & Security.` });
+    }
+    createBrowserSession(req, res, { role: account.role || 'employee', username: account.username, employeeId: account.employeeId });
+    sendJson(res, 200, { ok: true, provider: requestedProvider, mode, redirectTo: roleHomePath(account.role || 'employee') });
+  } catch (error) { sendJson(res, 401, { code: 'FIREBASE_TOKEN_INVALID', message: error.message || 'Firebase identity verification failed.' }); }
+>>>>>>> cf13f62f1336acde192626d43f74c36514433cc9
 }
 
 function publicEmployeeAccount(account, db) {
   const employee = db.employees.find((item) => item.id === account.employeeId);
-  return { id: account.id, employeeId: account.employeeId, employeeName: employee?.fullName || 'Employee not found', employeeCode: employee?.employeeCode || '', username: account.username, active: account.active !== false, createdAt: account.createdAt, updatedAt: account.updatedAt };
+  return { id: account.id, role: account.role || 'employee', employeeId: account.employeeId, employeeName: employee?.fullName || (account.role === 'employee' ? 'Employee not found' : 'Not applicable'), employeeCode: employee?.employeeCode || '', username: account.username, phone: account.phone || '', active: account.active !== false, socialConnections: { phone: Boolean(account.phone), google: Boolean(account.socialIdentities?.google?.id), facebook: Boolean(account.socialIdentities?.facebook?.id) }, createdAt: account.createdAt, updatedAt: account.updatedAt };
 }
 
 function handleGetEmployeeAccounts(res) {
@@ -2637,17 +2793,23 @@ async function handleSaveEmployeeAccount(res, body, accountId = '') {
   const db = loadDb();
   const existing = accountId ? db.employeeAccounts.find((item) => item.id === accountId) : null;
   if (accountId && !existing) return sendJson(res, 404, { code: 'ACCOUNT_NOT_FOUND', message: 'Employee account not found.' });
-  const employeeId = String(body.employeeId || existing?.employeeId || '');
+  const role = String(body.role || existing?.role || 'employee').toLowerCase();
+  const employeeId = role === 'employee' ? String(body.employeeId || existing?.employeeId || '') : '';
   const username = String(body.username || existing?.username || '').trim().toLowerCase();
+  const requestedPhone = String(body.phone ?? existing?.phone ?? '').trim();
+  const phone = normalizeAccountPhone(requestedPhone);
   const password = String(body.password || '');
-  if (!db.employees.some((item) => item.id === employeeId)) return sendJson(res, 400, { code: 'EMPLOYEE_NOT_FOUND', message: 'Select a valid employee.' });
+  if (!['admin', 'hr', 'employee'].includes(role)) return sendJson(res, 400, { code: 'INVALID_ROLE', message: 'Role must be Employee, HR, or Admin.' });
+  if (role === 'employee' && !db.employees.some((item) => item.id === employeeId)) return sendJson(res, 400, { code: 'EMPLOYEE_NOT_FOUND', message: 'Select a valid employee for an Employee account.' });
   if (!/^[a-z0-9._-]{3,40}$/i.test(username)) return sendJson(res, 400, { code: 'INVALID_USERNAME', message: 'Username must be 3-40 letters, numbers, dots, underscores, or dashes.' });
+  if (requestedPhone && !phone) return sendJson(res, 400, { code: 'INVALID_ACCOUNT_PHONE', message: 'Phone number must contain 7-15 digits and include the country code.' });
   if ((!existing || password) && password.length < 8) return sendJson(res, 400, { code: 'WEAK_PASSWORD', message: 'Password must contain at least 8 characters.' });
   if (db.employeeAccounts.some((item) => item.id !== accountId && item.username === username)) return sendJson(res, 409, { code: 'USERNAME_EXISTS', message: 'That username is already in use.' });
-  if (db.employeeAccounts.some((item) => item.id !== accountId && item.employeeId === employeeId)) return sendJson(res, 409, { code: 'EMPLOYEE_ACCOUNT_EXISTS', message: 'This employee already has an account.' });
+  if (phone && db.employeeAccounts.some((item) => item.id !== accountId && normalizeAccountPhone(item.phone) === phone)) return sendJson(res, 409, { code: 'PHONE_EXISTS', message: 'That phone number is already bound to another account.' });
+  if (role === 'employee' && db.employeeAccounts.some((item) => item.id !== accountId && item.role === 'employee' && item.employeeId === employeeId)) return sendJson(res, 409, { code: 'EMPLOYEE_ACCOUNT_EXISTS', message: 'This employee already has an account.' });
   const timestamp = nowIso();
   const account = existing || { id: createId('account'), createdAt: timestamp };
-  Object.assign(account, { employeeId, username, active: body.active !== false, updatedAt: timestamp });
+  Object.assign(account, { role, employeeId, username, phone, active: body.active !== false, updatedAt: timestamp });
   if (password) Object.assign(account, hashAccountPassword(password));
   if (!existing) db.employeeAccounts.unshift(account);
   saveDb(db);
@@ -2670,20 +2832,19 @@ async function handleAuthLogin(req, res) {
     return;
   }
   const body = await readBody(req);
-  const username = String(body.username || '').trim().toLowerCase();
+  const loginId = String(body.username || '').trim();
+  const username = loginId.toLowerCase();
+  const phone = normalizeAccountPhone(loginId);
   const password = String(body.password || '');
   const configuredAccount = [...ROLE_CREDENTIALS, ...EMPLOYEE_ACCOUNTS].find((item) => safeEqual(username, String(item.username).toLowerCase()) && safeEqual(password, item.password));
-  const dbAccount = loadDb().employeeAccounts.find((item) => item.active !== false && safeEqual(username, item.username) && verifyAccountPassword(password, item));
-  const account = configuredAccount || (dbAccount ? { role: 'employee', username: dbAccount.username, employeeId: dbAccount.employeeId } : null);
+  const dbAccount = loadDb().employeeAccounts.find((item) => item.active !== false && (safeEqual(username, item.username) || (phone && safeEqual(phone, normalizeAccountPhone(item.phone)))) && verifyAccountPassword(password, item));
+  const account = configuredAccount || (dbAccount ? { role: dbAccount.role || 'employee', username: dbAccount.username, employeeId: dbAccount.employeeId } : null);
   if (!account) {
-    sendJson(res, 401, { code: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
+    sendJson(res, 401, { code: 'INVALID_CREDENTIALS', message: 'Invalid username, phone number, or password.' });
     return;
   }
   const role = account.role;
-  const token = crypto.randomBytes(32).toString('base64url');
-  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS, ip, role, username, employeeId: account?.employeeId || '' });
-  const secure = String(getHeader(req, 'x-forwarded-proto') || '').toLowerCase() === 'https';
-  res.setHeader('Set-Cookie', `gms_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
+  createBrowserSession(req, res, { role, username, employeeId: account?.employeeId || '' });
   const redirectTo = roleHomePath(role);
   sendJson(res, 200, { ok: true, role, username, employeeId: account?.employeeId || '', redirectTo, expiresInHours: SESSION_TTL_MS / 3600000 });
 }
@@ -2705,7 +2866,23 @@ function handleAuthMe(req, res) {
     sendJson(res, 401, { code: 'AUTH_REQUIRED', message: 'Authentication is required.' });
     return;
   }
-  sendJson(res, 200, { authenticated: true, role: session.role, username: session.username, employeeId: session.employeeId || '', expiresAt: new Date(session.expiresAt).toISOString() });
+  const managed = loadDb().employeeAccounts.find((item) => item.active !== false && item.username === session.username);
+  sendJson(res, 200, { authenticated: true, role: session.role, username: session.username, employeeId: session.employeeId || '', managedAccount: Boolean(managed), phone: managed?.phone || '', socialConnections: { phone: Boolean(managed?.phone), google: Boolean(managed?.socialIdentities?.google?.id), facebook: Boolean(managed?.socialIdentities?.facebook?.id) }, expiresAt: new Date(session.expiresAt).toISOString() });
+}
+
+async function handleBindOwnPhone(req, res) {
+  const body = await readBody(req);
+  const requestedPhone = String(body.phone || '').trim();
+  const phone = normalizeAccountPhone(requestedPhone);
+  if (!phone) return sendJson(res, 400, { code: 'INVALID_ACCOUNT_PHONE', message: 'Enter a valid phone number with 7-15 digits.' });
+  const db = loadDb();
+  const account = db.employeeAccounts.find((item) => item.active !== false && item.username === req.auth?.username);
+  if (!account) return sendJson(res, 404, { code: 'MANAGED_ACCOUNT_REQUIRED', message: 'This session is not linked to a managed account.' });
+  if (db.employeeAccounts.some((item) => item.id !== account.id && normalizeAccountPhone(item.phone) === phone)) return sendJson(res, 409, { code: 'PHONE_EXISTS', message: 'That phone number is already bound to another account.' });
+  account.phone = phone;
+  account.updatedAt = nowIso();
+  saveDb(db);
+  sendJson(res, 200, { ok: true, phone });
 }
 
 function handleAuthLogout(req, res) {
@@ -2781,6 +2958,10 @@ async function handleRequest(req, res) {
       handleAuthMe(req, res);
       return;
     }
+    if (method === 'PATCH' && pathname === '/api/auth/phone') {
+      await handleBindOwnPhone(req, res);
+      return;
+    }
 
     if (method === 'GET' && pathname === '/api/fingerprints/pending') {
       const db = loadDb();
@@ -2820,6 +3001,11 @@ async function handleRequest(req, res) {
       sendJson(res, 200, { attendance: db.attendance.slice(0, limit) });
       return;
     }
+
+    if (method === 'POST' && pathname === '/api/auth/password-reset-request') { await handlePasswordResetRequest(res, await readBody(req)); return; }
+    if (method === 'POST' && pathname === '/api/auth/firebase') { await handleFirebaseAuth(req, res, await readBody(req)); return; }
+    const oauthMatch = pathname.match(/^\/api\/auth\/oauth\/(google|facebook)(\/callback)?$/);
+    if (method === 'GET' && oauthMatch) { if (oauthMatch[2]) await handleOauthCallback(req, res, url, oauthMatch[1]); else handleOauthStart(req, res, url, oauthMatch[1]); return; }
 
     if (method === 'GET' && pathname === '/api/employee-accounts') return handleGetEmployeeAccounts(res);
     if (method === 'POST' && pathname === '/api/employee-accounts') return handleSaveEmployeeAccount(res, await readBody(req));
@@ -3076,6 +3262,7 @@ if (require.main === module) {
 module.exports = {
   safeEqual,
   cleanDisplayText,
+  normalizeAccountPhone,
   normalizeDeviceId,
   isPublicApi,
   deviceRoute,

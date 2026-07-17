@@ -243,6 +243,8 @@ body.login-open { overflow: hidden; }
 .login-socials { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .login-social { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 49px; border: 1px solid #dfe3ed; border-radius: 11px; background: #fff; color: #434c68; box-shadow: 0 5px 15px rgba(35,45,90,.04); font-size: 12px; }
 .login-social:hover { border-color: #bdc5db; background: #fafbff; color: #222d50; transform: translateY(-1px); box-shadow: 0 8px 18px rgba(35,45,90,.08); }
+.login-phone-icon { height: 18px; background: #8d98aa; mask: url('/icons/phone.svg') center/18px 18px no-repeat; }
+.login-input-wrap:focus-within .login-phone-icon { background: #405ce0; }
 .google-mark { font-size: 20px; font-weight: 850; background: conic-gradient(from -45deg, #4285f4 0 25%, #34a853 0 42%, #fbbc05 0 66%, #ea4335 0 82%, #4285f4 0); background-clip: text; -webkit-background-clip: text; color: transparent; }
 .facebook-mark { display: grid; place-items: end center; width: 22px; height: 22px; overflow: hidden; border-radius: 50%; background: #1877f2; color: #fff; font: 800 20px/20px Arial, sans-serif; }
 .login-panel-footer { position: absolute; bottom: 25px; display: flex; gap: 25px; color: #9aa1b0; font-size: 10px; }

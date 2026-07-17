@@ -1,91 +1,13 @@
 <!doctype html>
 <!-- HR files are grouped under public/hr. -->
-<html lang="en">
-
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>HR Workspace · GMS Attendance</title>
-  <link rel="stylesheet" href="/hr.css?v=20260715-1">
-</head>
-
-<body>
-  <div class="hr-shell">
-    <aside>
-      <div class="brand"><img src="/images/gwd-logo.jpg" alt="">
-        <div><strong>GMS Attendance</strong><span>HR Workspace</span></div>
-      </div>
-      <nav><button class="active" data-section="overview">Overview</button><button
-          data-section="employees">Employees</button><button data-section="requests">Request approvals</button><button
-          data-section="notifications">Notifications</button></nav><button id="logoutBtn" class="logout">Sign
-        out</button>
-    </aside>
-    <main>
-      <header>
-        <div><span class="eyebrow">HUMAN RESOURCES</span>
-          <h1>Attendance operations</h1>
-          <p id="branchLabel">Loading workspace...</p>
-        </div>
-        <div class="avatar">HR</div>
-      </header>
-      <p id="message" class="message"></p>
-      <section id="overview" class="page active">
-        <div id="summary" class="summary"></div>
-        <article class="card">
-          <div class="card-head">
-            <div>
-              <h2>Today's attendance</h2>
-              <p>Live employee time-card status.</p>
-            </div><button id="refreshBtn">Refresh</button>
-          </div>
-          <div class="table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Schedule</th>
-                  <th>Time in</th>
-                  <th>Time out</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="attendanceRows"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-      <section id="employees" class="page">
-        <article class="card">
-          <div class="card-head">
-            <div>
-              <h2>Employee directory</h2>
-              <p>Active and inactive workforce records.</p>
-            </div>
-          </div>
-          <div id="employeeGrid" class="employee-grid"></div>
-        </article>
-      </section>
-      <section id="requests" class="page">
-        <div class="request-grid">
-          <article class="card">
-            <h2>Leave requests</h2>
-            <div id="leaveRows"></div>
-          </article>
-          <article class="card">
-            <h2>Attendance corrections</h2>
-            <div id="correctionRows"></div>
-          </article>
-        </div>
-      </section>
-      <section id="notifications" class="page">
-        <article class="card">
-          <h2>Notifications</h2>
-          <div id="notificationRows"></div>
-        </article>
-      </section>
-    </main>
-  </div>
-  <script src="/hr.js?v=20260715-1"></script>
-</body>
-
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HR Workspace · GMS Attendance</title><link rel="stylesheet" href="/hr.css?v=20260716-2"><link rel="stylesheet" href="/portal-overrides.css?v=20260716-2"></head>
+<body data-auth-mode="link"><div class="hr-shell">
+  <aside><div class="brand"><img src="/images/gwd-logo.jpg" alt=""><div><strong>GMS Attendance</strong><span>HR Workspace</span></div></div><nav><button class="active" data-section="overview">Overview</button><button data-section="employees">Employees</button><button data-section="requests">Request approvals</button><button data-section="notifications">Notifications</button><button data-section="account">My account</button></nav><button id="logoutBtn" class="logout">Sign out</button></aside>
+  <main><header><div><span class="eyebrow">HUMAN RESOURCES</span><h1>Attendance operations</h1><p id="branchLabel">Loading workspace...</p></div><div class="avatar">HR</div></header><p id="message" class="message"></p>
+    <section id="overview" class="page active"><div id="summary" class="summary"></div><article class="card"><div class="card-head"><div><h2>Today's attendance</h2><p>Live employee time-card status.</p></div><button id="refreshBtn">Refresh</button></div><div class="table"><table><thead><tr><th>Employee</th><th>Schedule</th><th>Time in</th><th>Time out</th><th>Status</th></tr></thead><tbody id="attendanceRows"></tbody></table></div></article></section>
+    <section id="employees" class="page"><article class="card"><div class="card-head"><div><h2>Employee directory</h2><p>Active and inactive workforce records.</p></div></div><div id="employeeGrid" class="employee-grid"></div></article></section>
+    <section id="requests" class="page"><div class="request-grid"><article class="card"><h2>Leave requests</h2><div id="leaveRows"></div></article><article class="card"><h2>Attendance corrections</h2><div id="correctionRows"></div></article></div></section>
+    <section id="notifications" class="page"><article class="card"><h2>Notifications</h2><div id="notificationRows"></div></article></section>
+    <section id="account" class="page"><article class="card"><h2>My account & sign-in</h2><p>Bind a phone number, Google, or Facebook to the currently signed-in managed HR account.</p><form id="phoneBindForm" class="phone-bind-form"><label for="accountPhoneInput"><strong>Phone number</strong><span id="phoneLinkStatus">Not bound</span></label><div><span class="phone-icon" aria-hidden="true"></span><input id="accountPhoneInput" type="tel" inputmode="tel" autocomplete="tel" placeholder="+63 917 123 4567" required><button id="bindPhoneBtn" type="submit">Bind</button></div></form><div class="linked"><div><strong>Google account</strong><span id="googleLinkStatus">Checking...</span></div><button type="button" data-link-provider="google">Connect</button></div><div class="linked"><div><strong>Facebook account</strong><span id="facebookLinkStatus">Checking...</span></div><button type="button" data-link-provider="facebook">Connect</button></div><div id="managedAccountNote" class="security-note"></div></article></section>
+  </main>
+</div><script src="/hr/dashboard.js?v=20260716-phone4"></script><script type="module" src="/firebase-auth.js?v=20260716-6"></script></body></html>
