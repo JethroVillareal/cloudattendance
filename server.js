@@ -543,6 +543,14 @@ function verifyAccountPassword(password, account) {
   return safeEqual(crypto.scryptSync(String(password), account.passwordSalt, 64).toString('hex'), account.passwordHash);
 }
 
+function hasActiveLoginUsername(username) {
+  const normalized = String(username || '').trim().toLowerCase();
+  if (!normalized) return false;
+  const configuredAccount = [...ROLE_CREDENTIALS, ...EMPLOYEE_ACCOUNTS].some((item) => safeEqual(normalized, String(item.username).toLowerCase()));
+  if (configuredAccount) return true;
+  return loadDb().employeeAccounts.some((item) => item.active !== false && safeEqual(normalized, String(item.username || '').toLowerCase()));
+}
+
 function parseCookies(req) {
   return Object.fromEntries(String(getHeader(req, 'cookie') || '').split(';').map((part) => {
     const index = part.indexOf('=');
@@ -2612,7 +2620,7 @@ function routeStatic(req, res, pathname) {
 }
 
 function isPublicApi(pathname, method) {
-  return method === 'POST' && pathname === '/api/auth/login';
+  return method === 'POST' && ['/api/auth/login', '/api/auth/check-username'].includes(pathname);
 }
 
 function publicEmployeeAccount(account, db) {
@@ -2680,6 +2688,17 @@ async function handleAuthLogin(req, res) {
   sendJson(res, 200, { ok: true, role, username, employeeId: account?.employeeId || '', redirectTo, expiresInHours: SESSION_TTL_MS / 3600000 });
 }
 
+async function handleAuthUsernameCheck(req, res) {
+  const ip = requestIp(req);
+  if (!consumeRateLimit(`auth-username:${ip}`, Math.max(10, AUTH_ATTEMPTS_PER_15_MINUTES * 3), 15 * 60 * 1000)) {
+    sendJson(res, 429, { code: 'TOO_MANY_ATTEMPTS', message: 'Too many username checks. Try again later.' });
+    return;
+  }
+  const body = await readBody(req);
+  const username = String(body.username || '').trim().toLowerCase();
+  sendJson(res, 200, { exists: hasActiveLoginUsername(username) });
+}
+
 function handleAuthMe(req, res) {
   const session = validSession(req);
   if (!session) {
@@ -2732,6 +2751,11 @@ async function handleRequest(req, res) {
 
     if (method === 'POST' && pathname === '/api/auth/login') {
       await handleAuthLogin(req, res);
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/auth/check-username') {
+      await handleAuthUsernameCheck(req, res);
       return;
     }
 

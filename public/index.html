@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GMS Attendance</title>
   <link rel="stylesheet" href="/style.css?v=20260715-premium-login">
-  <link rel="stylesheet" href="/premium-login.css?v=20260715-1">
+  <link rel="stylesheet" href="/premium-login.css?v=20260715-2">
 </head>
 
 <body>
@@ -80,20 +80,22 @@
               <span class="login-field-icon" aria-hidden="true">@</span>
               <input id="loginUsername" name="username" autocomplete="username" placeholder="Enter your username">
             </div>
-            <div class="login-label-row"><label for="loginPassword">Password</label><button id="forgotPasswordBtn"
-                type="button">Forgot password?</button></div>
-            <div class="login-input-wrap">
+            <div id="passwordStep" class="login-password-step" hidden>
+              <div class="login-label-row"><label for="loginPassword">Password</label><button id="forgotPasswordBtn"
+                  type="button">Forgot password?</button></div>
+              <div class="login-input-wrap">
               <span class="login-field-icon" aria-hidden="true">•</span>
               <input id="loginPassword" name="password" type="password" autocomplete="current-password"
-                placeholder="Enter your password">
+                placeholder="Enter your password" disabled>
               <button id="toggleLoginPassword" class="login-reveal" type="button"
                 aria-label="Show password">Show</button>
+              </div>
             </div>
           </div>
           <label class="login-remember"><input id="rememberLogin" type="checkbox" checked><span>Remember
               me</span></label>
           <p id="loginMessage" class="login-message" role="alert" aria-live="polite"></p>
-          <button id="loginSubmit" class="login-submit" type="submit"><span>Sign in securely</span><span
+          <button id="loginSubmit" class="login-submit" type="submit"><span>Continue</span><span
               aria-hidden="true">→</span></button>
         </form>
         <div class="login-divider"><span>Or continue with</span></div>
@@ -221,7 +223,7 @@
     </div>
   </div>
 
-  <script src="/login.js?v=20260715-login8"></script>
+  <script src="/login.js?v=20260715-login9"></script>
 </body>
 
 </html>
