@@ -594,8 +594,14 @@
   const employeeAvatar = (employee) => {
     const photo = employee.photoUrl || employeeProfilePhotos[String(employee.fullName || '').trim().toLowerCase()];
     const initials = String(employee.fullName || '?').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
-    return photo ? `<img src="${esc(photo)}" alt="${esc(employee.fullName)} profile photo" loading="lazy">` : `<span>${esc(initials)}</span>`;
+    return photo ? `<img src="${esc(photo)}" alt="${esc(employee.fullName)} profile photo" loading="lazy" data-employee-avatar><span hidden>${esc(initials)}</span>` : `<span>${esc(initials)}</span>`;
   };
+  document.addEventListener('error', (event) => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement) || !image.matches('[data-employee-avatar]')) return;
+    image.hidden = true;
+    if (image.nextElementSibling) image.nextElementSibling.hidden = false;
+  }, true);
   const employeeIdentity = (employee, options = {}) => {
     const active = employee?.active !== false;
     const status = options.status || (active ? 'Active' : 'Inactive');
@@ -1829,8 +1835,8 @@
       to = new Date(date.getFullYear(), date.getMonth() + 1, 0).toLocaleDateString('en-CA');
     }
     const cutoff = $('cutoffFilter')?.value || '';
-    if (activeView === 'Monthly' && cutoff.includes('1') && cutoff.includes('15')) { from = `${selectedDate.slice(0, 7)}-01`; to = `${selectedDate.slice(0, 7)}-15`; }
-    if (activeView === 'Monthly' && cutoff.includes('16')) { from = `${selectedDate.slice(0, 7)}-16`; to = new Date(date.getFullYear(), date.getMonth() + 1, 0).toLocaleDateString('en-CA'); }
+    if (activeView === 'Monthly' && cutoff === 'FIRST_HALF') { from = `${selectedDate.slice(0, 7)}-01`; to = `${selectedDate.slice(0, 7)}-15`; }
+    if (activeView === 'Monthly' && cutoff === 'SECOND_HALF') { from = `${selectedDate.slice(0, 7)}-16`; to = new Date(date.getFullYear(), date.getMonth() + 1, 0).toLocaleDateString('en-CA'); }
     if ($('employeeFilter')?.value) params.set('employeeId', $('employeeFilter').value);
     params.set('from', from); params.set('to', to);
     const status = $('statusFilter')?.value;
@@ -1846,14 +1852,35 @@
     const date = new Date(`${selectedDate}T00:00:00`);
     const monthKey = selectedDate.slice(0, 7);
     const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0).toLocaleDateString('en-CA');
-    const cutoff = $('cutoffFilter')?.value || (date.getDate() <= 15 ? '1 – 15' : '16 – End');
+    const cutoff = $('cutoffFilter')?.value || (date.getDate() <= 15 ? 'FIRST_HALF' : 'SECOND_HALF');
     let from = `${monthKey}-01`;
     let to = `${monthKey}-15`;
-    if (cutoff.includes('16') || (cutoff.toLowerCase().includes('full') && date.getDate() > 15)) { from = `${monthKey}-16`; to = monthEnd; }
+    if (cutoff === 'SECOND_HALF' || (cutoff === 'FULL_MONTH' && date.getDate() > 15)) { from = `${monthKey}-16`; to = monthEnd; }
     params.set('employeeId', employeeId);
     params.set('from', from);
     params.set('to', to);
     return params;
+  }
+
+  function updateCurrentCutoffLabel(selectedDate, initializeSelection = false) {
+    const cutoffFilter = $('cutoffFilter');
+    if (!cutoffFilter) return;
+
+    const today = new Date();
+    const date = new Date(`${selectedDate}T00:00:00`);
+    const isCurrentMonth =
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth();
+    const currentValue = today.getDate() <= 15 ? 'FIRST_HALF' : 'SECOND_HALF';
+
+    if (initializeSelection) {
+      cutoffFilter.value = date.getDate() <= 15 ? 'FIRST_HALF' : 'SECOND_HALF';
+    }
+
+    const firstHalf = cutoffFilter.querySelector('[value="FIRST_HALF"]');
+    const secondHalf = cutoffFilter.querySelector('[value="SECOND_HALF"]');
+    if (firstHalf) firstHalf.textContent = `1 – 15${isCurrentMonth && currentValue === 'FIRST_HALF' ? ' (Current)' : ''}`;
+    if (secondHalf) secondHalf.textContent = `16 – End${isCurrentMonth && currentValue === 'SECOND_HALF' ? ' (Current)' : ''}`;
   }
 
   async function timecard() {
@@ -1886,6 +1913,10 @@
       const parsedDate = new Date(`${dateInput.value}T00:00:00`);
       dateLabel.textContent = parsedDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
     }
+    const cutoffFilter = $('cutoffFilter');
+    const initializeCutoff = cutoffFilter && !cutoffFilter.dataset.initialized;
+    updateCurrentCutoffLabel(dateInput?.value || new Date().toLocaleDateString('en-CA'), initializeCutoff);
+    if (initializeCutoff) cutoffFilter.dataset.initialized = 'true';
     const [{ employees }, { settings }, result] = await Promise.all([
       api('/api/employees'), api('/api/settings'), api(`/api/timecard?${buildTimeCardParams()}`)
     ]);
@@ -2315,7 +2346,7 @@
       const matchesStatus = status === 'all' || (status === 'active' ? account.active : !account.active);
       return matchesQuery && matchesStatus;
     });
-    $('employeeAccountRows').innerHTML = filtered.length ? filtered.map((account) => `<tr><td><strong>${esc(account.role === 'employee' ? account.employeeName : account.username)}</strong><small>${account.role === 'employee' ? esc(account.employeeCode || '—') : 'Managed portal account'}</small></td><td><span class="account-role ${esc(account.role)}">${esc(String(account.role).toUpperCase())}</span></td><td><span class="account-username">${esc(account.username)}</span><small>${esc(account.phone || 'No phone bound')}</small></td><td><span class="social-binding phone-binding ${account.socialConnections?.phone ? 'connected' : ''}"></span><span class="social-binding ${account.socialConnections?.google ? 'connected' : ''}">G</span><span class="social-binding ${account.socialConnections?.facebook ? 'connected' : ''}">f</span></td><td><span class="account-status ${account.active ? '' : 'inactive'}">${account.active ? 'Active' : 'Disabled'}</span></td><td>${esc(when(account.updatedAt))}</td><td><div class="account-row-actions"><button data-edit-account="${esc(account.id)}">Edit</button><button class="delete" data-delete-account="${esc(account.id)}">Delete</button></div></td></tr>`).join('') : `<tr><td colspan="7" class="accounts-empty">${liveEmployeeAccounts.length ? 'No accounts match this search or filter.' : 'No managed accounts yet. Click “Add Account” to create one.'}</td></tr>`;
+    $('employeeAccountRows').innerHTML = filtered.length ? filtered.map((account) => `<tr><td><strong>${esc(account.role === 'employee' ? account.employeeName : account.username)}</strong><small>${account.role === 'employee' ? esc(account.employeeCode || '—') : 'Managed portal account'}</small></td><td><span class="account-role ${esc(account.role)}">${esc(String(account.role).toUpperCase())}</span></td><td><span class="account-username">${esc(account.username)}</span><small>${esc(account.phone || 'No phone bound')}</small></td><td><span class="social-binding phone-binding ${account.socialConnections?.phone ? 'connected' : ''}" title="Phone"></span><span class="social-binding google-binding ${account.socialConnections?.google ? 'connected' : ''}" title="Google"></span><span class="social-binding facebook-binding ${account.socialConnections?.facebook ? 'connected' : ''}" title="Facebook"></span></td><td><span class="account-status ${account.active ? '' : 'inactive'}">${account.active ? 'Active' : 'Disabled'}</span></td><td>${esc(when(account.updatedAt))}</td><td><div class="account-row-actions"><button data-edit-account="${esc(account.id)}">Edit</button><button class="delete" data-delete-account="${esc(account.id)}">Delete</button></div></td></tr>`).join('') : `<tr><td colspan="7" class="accounts-empty">${liveEmployeeAccounts.length ? 'No accounts match this search or filter.' : 'No managed accounts yet. Click “Add Account” to create one.'}</td></tr>`;
   }
   function openAccountModal(account = null) {
     const assignedIds = new Set(liveEmployeeAccounts.filter((item) => item.id !== account?.id).map((item) => item.employeeId));

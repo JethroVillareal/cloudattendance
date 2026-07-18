@@ -477,19 +477,28 @@ function sendJson(res, status, data, req = null) {
   send(res, status, data, { 'Content-Type': 'application/json; charset=utf-8' }, req);
 }
 
+const staticFileCache = new Map();
+
 function sendFile(req, res, filePath, contentType) {
-  fs.readFile(filePath, (error, data) => {
-    if (error) {
-      sendJson(res, 404, { code: 'NOT_FOUND', message: 'File not found.' });
+  const serve = (data) => {
+    const etag = `"${crypto.createHash('sha256').update(data).digest('base64url').slice(0, 24)}"`;
+    const isHtml = contentType.startsWith('text/html');
+    const cacheControl = isHtml
+      ? 'private, max-age=300, must-revalidate'
+      : 'public, max-age=3600, must-revalidate';
+    if (String(getHeader(req, 'if-none-match') || '') === etag) {
+      res.writeHead(304, { ...securityHeaders(req), 'Cache-Control': cacheControl, ETag: etag });
+      res.end();
       return;
     }
     const headers = {
       ...securityHeaders(req),
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Cache-Control': cacheControl,
+      ETag: etag,
       'Content-Type': contentType
     };
     let body = data;
-    if (contentType.startsWith('text/html')) {
+    if (isHtml) {
       const nonce = crypto.randomBytes(18).toString('base64');
       body = Buffer.from(data.toString('utf8').replace(/<script(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`));
       const imageSources = `'self' data:${SUPABASE_IMAGE_ORIGIN ? ` ${SUPABASE_IMAGE_ORIGIN}` : ''}`;
@@ -497,6 +506,20 @@ function sendFile(req, res, filePath, contentType) {
     }
     res.writeHead(200, headers);
     res.end(body);
+  };
+
+  const cached = staticFileCache.get(filePath);
+  if (cached) {
+    serve(cached);
+    return;
+  }
+  fs.readFile(filePath, (error, data) => {
+    if (error) {
+      sendJson(res, 404, { code: 'NOT_FOUND', message: 'File not found.' });
+      return;
+    }
+    staticFileCache.set(filePath, data);
+    serve(data);
   });
 }
 
@@ -2931,6 +2954,13 @@ async function handleFirebaseAuth(req, res, body) {
     }
     const firebaseFacebookPhoto = socialProfilePhotoUrl(requestedProvider, { photoUrl: identity?.photoUrl || user.photoUrl });
     if (syncFacebookEmployeePhoto(db, account, firebaseFacebookPhoto)) saveDb(db);
+    // Firebase does not always include Facebook's picture URL in providerUserInfo.
+    // Refresh it from Graph immediately after binding/sign-in so attendance
+    // surfaces do not keep showing an older uploaded employee photo.
+    if (requestedProvider === 'facebook' && account.employeeId) {
+      facebookPhotoSyncAt.delete(account.id || account.employeeId);
+      await refreshBoundFacebookPhoto(account.employeeId);
+    }
     createBrowserSession(req, res, { role: account.role || 'employee', username: account.username, employeeId: account.employeeId });
     sendJson(res, 200, { ok: true, provider: requestedProvider, mode, redirectTo: roleHomePath(account.role || 'employee') });
   } catch (error) { sendJson(res, 401, { code: 'FIREBASE_TOKEN_INVALID', message: error.message || 'Firebase identity verification failed.' }); }
