@@ -270,6 +270,19 @@ function activeEmployeeFingerprints(employee) {
   return normalizeEmployeeFingerprints(employee).filter((fingerprint) => fingerprint.active !== false);
 }
 
+function removeEmployeeFingerprintMapping(employee, fingerprintId) {
+  const id = parseFingerprintId(fingerprintId);
+  if (!id) return false;
+  normalizeEmployeeFingerprints(employee);
+  const before = employee.fingerprints.length;
+  employee.fingerprints = employee.fingerprints.filter((fingerprint) => Number(fingerprint.fingerprintId) !== id);
+  if (employee.fingerprints.length === before) return false;
+  if (Number(employee.fingerprintId) === id) employee.fingerprintId = null;
+  const remaining = employee.fingerprints.filter((fingerprint) => fingerprint.active !== false);
+  employee.fingerprintId = remaining.length ? remaining[0].fingerprintId : null;
+  return true;
+}
+
 function findEmployeeByFingerprint(db, fingerprintId) {
   const id = parseFingerprintId(fingerprintId);
   if (!id) return null;
@@ -2422,18 +2435,19 @@ async function handleDeleteEmployeeFingerprint(res, employeeId, fingerprintIdTex
     return;
   }
 
-  const before = employee.fingerprints.length;
-  employee.fingerprints = employee.fingerprints.filter((fingerprint) => Number(fingerprint.fingerprintId) !== fingerprintId);
-  if (employee.fingerprints.length === before) {
+  if (!removeEmployeeFingerprintMapping(employee, fingerprintId)) {
     sendJson(res, 404, { code: 'FINGERPRINT_NOT_FOUND', message: 'Fingerprint not found on employee.' });
     return;
   }
-
-  if (Number(employee.fingerprintId) === fingerprintId) {
-    const remaining = activeEmployeeFingerprints(employee);
-    employee.fingerprintId = remaining.length ? remaining[0].fingerprintId : null;
-  }
   employee.updatedAt = nowIso();
+
+  for (const request of db.enrollmentRequests) {
+    if (Number(request.fingerprintId) === fingerprintId && request.status === 'PENDING_EMPLOYEE_DETAILS') {
+      request.status = 'CANCELED';
+      request.canceledAt = nowIso();
+      request.message = 'Fingerprint removed from employee and device.';
+    }
+  }
 
   const deleteCommand = queueFingerprintDeleteCommand(
     db,
@@ -3526,5 +3540,6 @@ module.exports = {
   shouldRateLimitRequest,
   securityHeaders,
   createOauthState,
-  readOauthState
+  readOauthState,
+  removeEmployeeFingerprintMapping
 };

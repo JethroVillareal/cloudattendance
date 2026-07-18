@@ -17,7 +17,8 @@ const {
   shouldRateLimitRequest,
   securityHeaders,
   createOauthState,
-  readOauthState
+  readOauthState,
+  removeEmployeeFingerprintMapping
 } = require('../server');
 
 test('constant-time key comparison accepts only exact keys', () => {
@@ -36,6 +37,22 @@ test('OAuth state survives process-local memory loss while rejecting tampering a
   assert.equal(readOauthState(`${state}x`, 'google', 'test-client-secret', now + 1000), null);
   assert.equal(readOauthState(state, 'facebook', 'test-client-secret', now + 1000), null);
   assert.equal(readOauthState(state, 'google', 'test-client-secret', now + 600_001), null);
+});
+
+test('fingerprint-only removal does not restore the deleted legacy primary ID', () => {
+  const employee = {
+    fingerprintId: 11,
+    fingerprints: [
+      { fingerprintId: 11, label: 'Primary Finger', active: true },
+      { fingerprintId: 12, label: 'Second Finger', active: true }
+    ]
+  };
+  assert.equal(removeEmployeeFingerprintMapping(employee, 11), true);
+  assert.equal(employee.fingerprintId, 12);
+  assert.deepEqual(employee.fingerprints.map((item) => item.fingerprintId), [12]);
+  assert.equal(removeEmployeeFingerprintMapping(employee, 12), true);
+  assert.equal(employee.fingerprintId, null);
+  assert.deepEqual(employee.fingerprints, []);
 });
 
 test('account phone binding normalizes common formats safely', () => {
