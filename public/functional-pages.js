@@ -1978,6 +1978,21 @@
     installFunctionalSettingsPanels(data);
   }
 
+  function bindSettingsTabs() {
+    document.querySelectorAll('.settings-tab').forEach((button) => {
+      if (button.dataset.liveTabBound === 'true') return;
+      button.dataset.liveTabBound = 'true';
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        document.querySelectorAll('.settings-tab').forEach((tab) => tab.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach((content) => content.classList.remove('active'));
+        button.classList.add('active');
+        const target = $(`${button.dataset.tab}Content`);
+        if (target) target.classList.add('active');
+      }, true);
+    });
+  }
+
   function installFunctionalSettingsPanels(data) {
     const generalPanel = $('generalContent');
     const attendancePanel = $('attendanceContent');
@@ -2462,7 +2477,10 @@
     $('startEnrollmentButton')?.addEventListener('click', (event) => startEnrollment(event).catch((error) => toast(error.message)), true);
     $('registrationForm')?.addEventListener('submit', registerForEnrollment, true);
   }
-  if (path === '/settings') $('generalSettingsForm')?.addEventListener('submit', saveSettings, true);
+  if (path === '/settings') {
+    bindSettingsTabs();
+    $('generalSettingsForm')?.addEventListener('submit', saveSettings, true);
+  }
   ['refreshButton', 'refreshDevicesButton', 'refreshLogsButton', 'loadButton'].forEach((id) =>
     $(id)?.addEventListener('click', (event) => { event.preventDefault(); event.stopImmediatePropagation(); safeRun(); }, true));
   safeRun();
