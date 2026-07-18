@@ -78,7 +78,6 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 const sessions = new Map();
 const rateBuckets = new Map();
-const oauthStates = new Map();
 const passwordResetTokens = new Map();
 const facebookPhotoSyncAt = new Map();
 let cloudDb = null;
@@ -570,6 +569,34 @@ function safeEqual(left, right) {
   const a = Buffer.from(String(left || ''));
   const b = Buffer.from(String(right || ''));
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function createOauthState(provider, values, secret, now = Date.now()) {
+  const payload = Buffer.from(JSON.stringify({
+    version: 1,
+    provider,
+    accountId: values?.accountId || '',
+    mode: values?.mode === 'reset' ? 'reset' : 'login',
+    expiresAt: now + 10 * 60 * 1000,
+    nonce: crypto.randomBytes(16).toString('base64url')
+  })).toString('base64url');
+  const signature = crypto.createHmac('sha256', String(secret || '')).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function readOauthState(state, provider, secret, now = Date.now()) {
+  const [payload, signature, extra] = String(state || '').split('.');
+  if (!payload || !signature || extra || !secret) return null;
+  const expected = crypto.createHmac('sha256', String(secret)).update(payload).digest('base64url');
+  if (!safeEqual(signature, expected)) return null;
+  try {
+    const saved = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (saved.version !== 1 || saved.provider !== provider || saved.expiresAt < now) return null;
+    if (!['login', 'reset'].includes(saved.mode)) return null;
+    return saved;
+  } catch {
+    return null;
+  }
 }
 
 function hashAccountPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -1224,18 +1251,15 @@ function handleOauthStart(req, res, url, provider) {
     const message = `${provider[0].toUpperCase() + provider.slice(1)} sign-in is not configured. Add its OAuth client ID and secret, then restart the server.`;
     return send(res, 302, '', { Location: `${destination}?authError=${encodeURIComponent(message)}` });
   }
-  const state = crypto.randomBytes(24).toString('base64url');
   const session = validSession(req);
   const db = loadDb();
   const account = session
     ? db.employeeAccounts.find((item) => item.active !== false && item.username === session.username)
     : null;
-  oauthStates.set(state, {
-    provider,
+  const state = createOauthState(provider, {
     accountId: account?.id || '',
-    mode: url.searchParams.get('mode') === 'reset' ? 'reset' : 'login',
-    expiresAt: Date.now() + 10 * 60 * 1000
-  });
+    mode: url.searchParams.get('mode') === 'reset' ? 'reset' : 'login'
+  }, config.secret);
   const target = new URL(config.authorize);
   target.searchParams.set('client_id', config.clientId); target.searchParams.set('redirect_uri', oauthCallbackUrl(req, provider));
   target.searchParams.set('response_type', 'code'); target.searchParams.set('scope', config.scope); target.searchParams.set('state', state);
@@ -1243,9 +1267,9 @@ function handleOauthStart(req, res, url, provider) {
 }
 
 async function handleOauthCallback(req, res, url, provider) {
-  const stateKey = url.searchParams.get('state') || ''; const saved = oauthStates.get(stateKey); oauthStates.delete(stateKey);
-  if (!saved || saved.provider !== provider || saved.expiresAt < Date.now()) return send(res, 302, '', { Location: '/?authError=OAuth%20request%20expired' });
   const config = oauthConfig(provider); const code = url.searchParams.get('code');
+  const saved = readOauthState(url.searchParams.get('state'), provider, config?.secret);
+  if (!saved) return send(res, 302, '', { Location: '/?authError=OAuth%20request%20expired' });
   if (!config || !code) return send(res, 302, '', { Location: '/?authError=OAuth%20authorization%20was%20cancelled' });
   try {
     const tokenUrl = new URL(config.token); const params = new URLSearchParams({ client_id: config.clientId, client_secret: config.secret, redirect_uri: oauthCallbackUrl(req, provider), code, grant_type: 'authorization_code' });
@@ -3488,5 +3512,7 @@ module.exports = {
   normalizeSettings,
   consumeRateLimit,
   shouldRateLimitRequest,
-  securityHeaders
+  securityHeaders,
+  createOauthState,
+  readOauthState
 };

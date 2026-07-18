@@ -15,13 +15,27 @@ const {
   normalizeSettings,
   consumeRateLimit,
   shouldRateLimitRequest,
-  securityHeaders
+  securityHeaders,
+  createOauthState,
+  readOauthState
 } = require('../server');
 
 test('constant-time key comparison accepts only exact keys', () => {
   assert.equal(safeEqual('correct-key', 'correct-key'), true);
   assert.equal(safeEqual('correct-key', 'wrong-key'), false);
   assert.equal(safeEqual('short', 'longer'), false);
+});
+
+test('OAuth state survives process-local memory loss while rejecting tampering and expiry', () => {
+  const now = 1_700_000_000_000;
+  const state = createOauthState('google', { accountId: 'account-1', mode: 'login' }, 'test-client-secret', now);
+  assert.deepEqual(
+    { ...readOauthState(state, 'google', 'test-client-secret', now + 1000), nonce: '<random>' },
+    { version: 1, provider: 'google', accountId: 'account-1', mode: 'login', expiresAt: now + 600_000, nonce: '<random>' }
+  );
+  assert.equal(readOauthState(`${state}x`, 'google', 'test-client-secret', now + 1000), null);
+  assert.equal(readOauthState(state, 'facebook', 'test-client-secret', now + 1000), null);
+  assert.equal(readOauthState(state, 'google', 'test-client-secret', now + 600_001), null);
 });
 
 test('account phone binding normalizes common formats safely', () => {
