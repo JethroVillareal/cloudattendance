@@ -132,7 +132,7 @@ label:has(> input[type="search"]):focus-within,
 
 /* Full Time Card: one complete semi-monthly cutoff visible at a glance. */
 .page-timecard .full-timecard-modal .modal {
-  width: min(1420px, calc(100vw - 18px)) !important;
+  width: min(1120px, calc(100vw - 36px)) !important;
   max-height: calc(100dvh - 16px) !important;
   border-radius: 16px !important;
 }
