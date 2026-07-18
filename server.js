@@ -1274,9 +1274,17 @@ async function handleOauthCallback(req, res, url, provider) {
   try {
     const tokenUrl = new URL(config.token); const params = new URLSearchParams({ client_id: config.clientId, client_secret: config.secret, redirect_uri: oauthCallbackUrl(req, provider), code, grant_type: 'authorization_code' });
     const tokenResponse = provider === 'google' ? await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params }) : await fetch(`${tokenUrl}?${params}`);
-    const token = await tokenResponse.json(); if (!token.access_token) throw new Error('Token exchange failed');
+    const token = await tokenResponse.json();
+    if (!tokenResponse.ok || !token.access_token) {
+      const reason = cleanDisplayText(token.error_description || token.error?.message || token.error || `HTTP ${tokenResponse.status}`, 180);
+      throw new Error(`Token exchange rejected: ${reason}`);
+    }
     const profileUrl = new URL(config.profile); if (provider === 'facebook') profileUrl.searchParams.set('access_token', token.access_token);
     const profileResponse = await fetch(profileUrl, provider === 'google' ? { headers: { Authorization: `Bearer ${token.access_token}` } } : {}); const profile = await profileResponse.json();
+    if (!profileResponse.ok || !(profile.sub || profile.id)) {
+      const reason = cleanDisplayText(profile.error?.message || profile.error || `HTTP ${profileResponse.status}`, 180);
+      throw new Error(`Profile request rejected: ${reason}`);
+    }
     const email = String(profile.email || '').trim().toLowerCase(); const providerId = String(profile.sub || profile.id || ''); const db = loadDb();
     let dbAccount = saved.accountId
       ? db.employeeAccounts.find((item) => item.active !== false && item.id === saved.accountId)
@@ -1299,7 +1307,11 @@ async function handleOauthCallback(req, res, url, provider) {
     if (syncFacebookEmployeePhoto(db, dbAccount, facebookPhotoUrl)) saveDb(db);
     createBrowserSession(req, res, { role: dbAccount.role || 'employee', username: dbAccount.username, employeeId: dbAccount.employeeId || '' });
     return send(res, 302, '', { Location: `${roleHomePath(dbAccount.role || 'employee')}?authSuccess=${encodeURIComponent(`${provider[0].toUpperCase() + provider.slice(1)} account connected`)}` });
-  } catch { return send(res, 302, '', { Location: '/?authError=Social%20sign-in%20failed' }); }
+  } catch (error) {
+    const detail = cleanDisplayText(error?.message || 'Provider request failed', 200);
+    console.error(`[OAUTH] ${provider} sign-in failed: ${detail}`);
+    return send(res, 302, '', { Location: `/?authError=${encodeURIComponent(`${provider[0].toUpperCase() + provider.slice(1)} sign-in failed: ${detail}`)}` });
+  }
 }
 
 function normalizeWorkflowStatus(value, allowed, fallback = 'PENDING') {

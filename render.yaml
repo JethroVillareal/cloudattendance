@@ -19,6 +19,8 @@ services:
         value: "true"
       - key: TRUST_PROXY
         value: "true"
+      - key: APP_BASE_URL
+        value: https://cloudattendance.onrender.com
       - key: DEVICE_TIMEZONE
         value: Asia/Manila
       - key: DATABASE_URL
