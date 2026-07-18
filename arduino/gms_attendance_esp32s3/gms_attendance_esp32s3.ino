@@ -34,7 +34,7 @@
 
 
 const char* FIRMWARE_VERSION =
-    "5.0.0-24x7-reliability";
+    "5.1.0-local-cloud-failover";
 
 // =====================================================
 // GPIO CONFIGURATION
@@ -106,6 +106,7 @@ constexpr uint16_t API_HTTP_TIMEOUT_MS = 8000;
 constexpr unsigned long OLED_SLEEP_TIMEOUT_MS = 60000;
 constexpr unsigned long FINGERPRINT_POLL_INTERVAL_MS = 55;
 constexpr unsigned long FINGERPRINT_RECOVERY_INTERVAL_MS = 30000;
+constexpr unsigned long LOCAL_SERVER_PROBE_INTERVAL_MS = 30000;
 constexpr unsigned long FINGERPRINT_OPERATION_TIMEOUT_MS = 30000;
 constexpr unsigned long HEAP_LOG_INTERVAL_MS = 60000;
 constexpr uint8_t FINGERPRINT_RECOVERY_LIMIT = 3;
@@ -218,6 +219,9 @@ bool oledReady = false;
 bool rtcReady = false;
 bool wasWiFiConnected = false;
 bool serverReachable = false;
+String activeApiUrl = String(LOCAL_API_URL);
+bool activeServerIsLocal = true;
+unsigned long lastLocalServerProbeAt = 0;
 int lastServerStatusCode = 0;
 String lastConnectionTitle = "";
 unsigned long lastIdleOledRefresh = 0;
@@ -280,7 +284,7 @@ String connectionStatusTitle() {
   }
 
   if (serverReachable) {
-    return "ONLINE CONNECTED";
+    return activeServerIsLocal ? "LOCAL CONNECTED" : "CLOUD CONNECTED";
   }
 
   return "ONLINE DISCONNECTED";
@@ -292,7 +296,7 @@ String connectionDetailLine() {
   }
 
   if (serverReachable) {
-    return "Server connected";
+    return activeServerIsLocal ? "Local server connected" : "Render cloud connected";
   }
 
   if (lastServerStatusCode > 0) {
@@ -1703,31 +1707,37 @@ bool parseApiResponse(
   return true;
 }
 
-bool sendScanToServer(
+bool beginDeviceHttp(
+    HTTPClient& http,
+    WiFiClient& plainClient,
+    WiFiClientSecure& secureClient,
+    const String& url
+) {
+  if (url.startsWith("https://")) {
+    secureClient.setInsecure();
+    return http.begin(secureClient, url);
+  }
+  return http.begin(plainClient, url);
+}
+
+void selectActiveServer(const String& scanApiUrl, bool localServer) {
+  activeApiUrl = scanApiUrl;
+  activeServerIsLocal = localServer;
+  serverReachable = true;
+  Serial.print("[SERVER] Active route: ");
+  Serial.println(localServer ? "LOCAL LAN" : "RENDER CLOUD");
+}
+
+bool sendScanToEndpoint(
+    const String& scanApiUrl,
     const String& json,
     ApiResponse& response
 ) {
-  if (WiFi.status() != WL_CONNECTED) {
-    serverReachable = false;
-    lastServerStatusCode = 0;
-    return false;
-  }
-
-  WiFiClientSecure client;
-  client.setInsecure();
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
-
   http.setTimeout(API_HTTP_TIMEOUT_MS);
-
-  if (!http.begin(client, API_URL)) {
-    Serial.println(
-      "[API] HTTP initialization failed."
-    );
-
-    serverReachable = false;
-    lastServerStatusCode = 0;
-    return false;
-  }
+  if (!beginDeviceHttp(http, plainClient, secureClient, scanApiUrl)) return false;
 
   http.addHeader(
     "Content-Type",
@@ -1777,11 +1787,8 @@ bool sendScanToServer(
     statusCode < 200 ||
     statusCode >= 300
   ) {
-    serverReachable = false;
     return false;
   }
-
-  serverReachable = true;
 
   if (!responseBody.isEmpty()) {
     parseApiResponse(
@@ -1793,8 +1800,35 @@ bool sendScanToServer(
   return true;
 }
 
+bool sendScanToServer(const String& json, ApiResponse& response) {
+  if (WiFi.status() != WL_CONNECTED) {
+    serverReachable = false;
+    lastServerStatusCode = 0;
+    return false;
+  }
+
+  const bool probeLocal = activeServerIsLocal || millis() - lastLocalServerProbeAt >= LOCAL_SERVER_PROBE_INTERVAL_MS;
+  if (probeLocal) {
+    lastLocalServerProbeAt = millis();
+    Serial.println("[API] Trying local attendance server...");
+    if (sendScanToEndpoint(String(LOCAL_API_URL), json, response)) {
+      selectActiveServer(String(LOCAL_API_URL), true);
+      return true;
+    }
+  }
+
+  Serial.println("[API] Local unavailable; trying Render cloud...");
+  if (sendScanToEndpoint(String(CLOUD_API_URL), json, response)) {
+    selectActiveServer(String(CLOUD_API_URL), false);
+    return true;
+  }
+
+  serverReachable = false;
+  return false;
+}
+
 String apiBaseUrl() {
-  String url = String(API_URL);
+  String url = activeApiUrl;
   const int apiPathIndex =
       url.indexOf("/api/");
 
@@ -1835,11 +1869,11 @@ void sendFingerprintScanStatus(const String& status) {
   document["status"] = status;
   String json;
   serializeJson(document, json);
-  WiFiClientSecure client;
-  client.setInsecure();
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   http.setTimeout(API_HTTP_TIMEOUT_MS);
-  if (!http.begin(client, fingerprintScanStatusUrl())) return;
+  if (!beginDeviceHttp(http, plainClient, secureClient, fingerprintScanStatusUrl())) return;
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-Key", API_KEY);
   http.addHeader("X-Device-ID", DEVICE_ID);
@@ -1857,12 +1891,12 @@ bool sendEnrollmentRequestToServer(
     return false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   http.setTimeout(API_HTTP_TIMEOUT_MS);
 
-  if (!http.begin(client, enrollmentRequestUrl())) {
+  if (!beginDeviceHttp(http, plainClient, secureClient, enrollmentRequestUrl())) {
     Serial.println("[ENROLL API] HTTP initialization failed.");
     serverReachable = false;
     lastServerStatusCode = 0;
@@ -1986,6 +2020,13 @@ void sendReaderHeartbeat() {
     return;
   }
 
+  if (!activeServerIsLocal && millis() - lastLocalServerProbeAt >= LOCAL_SERVER_PROBE_INTERVAL_MS) {
+    activeApiUrl = String(LOCAL_API_URL);
+    activeServerIsLocal = true;
+    lastLocalServerProbeAt = millis();
+  }
+  const bool attemptedLocal = activeServerIsLocal;
+
   JsonDocument document;
   document["deviceId"] = DEVICE_ID;
   document["source"] = "ESP32-S3";
@@ -2011,15 +2052,21 @@ void sendReaderHeartbeat() {
   String json;
   serializeJson(document, json);
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
 
-  if (!http.begin(client, heartbeatUrl())) {
+  if (!beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
     Serial.println(
       "[API] Heartbeat initialization failed."
     );
+    if (attemptedLocal) {
+      activeApiUrl = String(CLOUD_API_URL);
+      activeServerIsLocal = false;
+      sendReaderHeartbeat();
+      return;
+    }
     serverReachable = false;
     lastServerStatusCode = 0;
     resetIdleCloseStatus();
@@ -2053,8 +2100,15 @@ void sendReaderHeartbeat() {
   Serial.println(statusCode);
 
   if (serverReachable) {
+    selectActiveServer(activeApiUrl, attemptedLocal);
     parseHeartbeatResponse(responseBody);
   } else {
+    if (attemptedLocal) {
+      activeApiUrl = String(CLOUD_API_URL);
+      activeServerIsLocal = false;
+      sendReaderHeartbeat();
+      return;
+    }
     resetIdleCloseStatus();
   }
 
@@ -2093,12 +2147,12 @@ void acknowledgeDisplayCommand(
   String json;
   serializeJson(document, json);
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   http.setTimeout(API_HTTP_TIMEOUT_MS);
 
-  if (!http.begin(client, displayCommandAckUrl())) {
+  if (!beginDeviceHttp(http, plainClient, secureClient, displayCommandAckUrl())) {
     Serial.println("[COMMAND] ACK HTTP init failed.");
     return;
   }
@@ -2124,12 +2178,12 @@ void pollDisplayCommand() {
     return;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   http.setTimeout(API_HTTP_TIMEOUT_MS);
 
-  if (!http.begin(client, displayCommandUrl())) {
+  if (!beginDeviceHttp(http, plainClient, secureClient, displayCommandUrl())) {
     Serial.println("[COMMAND] Display command HTTP init failed.");
     return;
   }
@@ -2952,10 +3006,7 @@ void processFingerprint(
     formatTimestamp(currentTime)
   );
 
-  if (
-    WiFi.status() == WL_CONNECTED &&
-    serverReachable
-  ) {
+  if (WiFi.status() == WL_CONNECTED) {
     showLiveScanStage(
       "RECORDING",
       "MATCH CONFIRMED",
