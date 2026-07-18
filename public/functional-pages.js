@@ -1153,6 +1153,7 @@
   }
 
   let enrollmentRecords = [];
+  let enrollmentPendingRecords = [];
   let enrollmentScanTimer = null;
   const enrollmentPageSize = 10;
 
@@ -1206,6 +1207,46 @@
     modal.classList.add('show');
   }
 
+  function renderUnassignedFingerprints(pending) {
+    const registeredPanel = $('employeeTableBody')?.closest('.table-panel');
+    if (!registeredPanel) return;
+    let panel = $('unassignedFingerprintPanel');
+    if (!panel) {
+      registeredPanel.insertAdjacentHTML('beforebegin', `<section class="panel unassigned-fingerprint-panel" id="unassignedFingerprintPanel">
+        <header><div><h3>Unassigned Fingerprints <span id="unassignedFingerprintCount">0</span></h3><p>Fingerprints stored on a reader but not yet linked to an employee.</p></div></header>
+        <div class="unassigned-fingerprint-list" id="unassignedFingerprintList"></div>
+      </section>`);
+      panel = $('unassignedFingerprintPanel');
+      panel.addEventListener('click', (event) => {
+        const assignButton = event.target.closest('[data-assign-pending]');
+        const deleteButton = event.target.closest('[data-delete-pending]');
+        if (assignButton) {
+          const request = enrollmentPendingRecords.find((item) => item.id === assignButton.dataset.assignPending);
+          if (request) openEnrollmentAssignment(request);
+          return;
+        }
+        if (deleteButton) {
+          const request = enrollmentPendingRecords.find((item) => item.id === deleteButton.dataset.deletePending);
+          if (!request || !window.confirm(`Delete unused fingerprint ID ${request.fingerprintId} from the server and reader?`)) return;
+          deleteButton.disabled = true;
+          api(`/api/fingerprints/pending/${encodeURIComponent(request.id)}`, { method: 'DELETE' })
+            .then((result) => { toast(result.message || `Fingerprint ID ${request.fingerprintId} deleted.`); return enrollment(); })
+            .catch((error) => { deleteButton.disabled = false; toast(error.message); });
+        }
+      });
+    }
+    if ($('unassignedFingerprintCount')) $('unassignedFingerprintCount').textContent = pending.length;
+    if ($('unassignedFingerprintList')) $('unassignedFingerprintList').innerHTML = pending.length
+      ? pending.map((request) => `<article class="unassigned-fingerprint-row">
+          <span class="unassigned-fingerprint-icon"><i data-lucide="fingerprint"></i></span>
+          <div><strong>Fingerprint ID ${esc(request.fingerprintId)}</strong><small>${esc(request.deviceId || request.lastDeviceId || 'Any reader')} · ${esc(when(request.enrolledAt || request.scannedAt || request.createdAt))}</small></div>
+          <span class="unassigned-fingerprint-status">Unassigned</span>
+          <div class="unassigned-fingerprint-actions"><button type="button" data-assign-pending="${esc(request.id)}">Assign Employee</button><button class="danger" type="button" data-delete-pending="${esc(request.id)}">Delete Fingerprint</button></div>
+        </article>`).join('')
+      : '<div class="unassigned-fingerprint-empty"><i data-lucide="badge-check"></i><div><strong>No unused fingerprints</strong><span>New scans without an employee will appear here.</span></div></div>';
+    window.lucide?.createIcons();
+  }
+
   function renderEnrollmentPage(requestedPage) {
     const total = enrollmentRecords.length;
     const totalPages = Math.max(1, Math.ceil(total / enrollmentPageSize));
@@ -1250,6 +1291,8 @@
       $('startEnrollmentButton').title = onlineReaders.length ? 'Scan and save an unassigned fingerprint' : 'Connect an ESP32-S3 first';
     }
     enrollmentRecords = records;
+    enrollmentPendingRecords = pending || [];
+    renderUnassignedFingerprints(enrollmentPendingRecords);
     renderEnrollmentPage(1);
     if ($('enrollmentMessage')) $('enrollmentMessage').textContent = pending.length
       ? `${pending.length} unassigned fingerprint${pending.length === 1 ? '' : 's'} ready to link from an Employee profile.`
