@@ -79,6 +79,8 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 const sessions = new Map();
 const rateBuckets = new Map();
 const oauthStates = new Map();
+const passwordResetTokens = new Map();
+const facebookPhotoSyncAt = new Map();
 let cloudDb = null;
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -452,7 +454,7 @@ function securityHeaders(req) {
     ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
-    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources} https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://apis.google.com; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com`,
+    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources} https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`,
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -491,7 +493,7 @@ function sendFile(req, res, filePath, contentType) {
       const nonce = crypto.randomBytes(18).toString('base64');
       body = Buffer.from(data.toString('utf8').replace(/<script(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`));
       const imageSources = `'self' data:${SUPABASE_IMAGE_ORIGIN ? ` ${SUPABASE_IMAGE_ORIGIN}` : ''}`;
-      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources} https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}' https://www.gstatic.com https://apis.google.com; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com`;
+      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources} https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`;
     }
     res.writeHead(200, headers);
     res.end(body);
@@ -1077,10 +1079,111 @@ async function handlePasswordResetRequest(res, body) {
   sendJson(res, 200, { ok: true, message: 'If the account exists, HR or an administrator has been notified.' });
 }
 
+function verifyActorPassword(actor, password, db = loadDb()) {
+  const username = String(actor?.username || '').trim().toLowerCase();
+  const candidate = String(password || '');
+  if (!username || !candidate) return false;
+  const configured = [...ROLE_CREDENTIALS, ...EMPLOYEE_ACCOUNTS]
+    .find((item) => safeEqual(username, String(item.username || '').trim().toLowerCase()));
+  if (configured && safeEqual(candidate, String(configured.password || ''))) return true;
+  const account = db.employeeAccounts.find((item) => item.active !== false && safeEqual(username, item.username));
+  return Boolean(account && verifyAccountPassword(candidate, account));
+}
+
+async function handleVerifiedPasswordReset(res, body) {
+  const idToken = String(body.idToken || '');
+  const resetToken = String(body.resetToken || '');
+  const newPassword = String(body.newPassword || '');
+  if (!idToken && !resetToken) return sendJson(res, 400, { code: 'VERIFICATION_REQUIRED', message: 'Phone, Google, or Facebook verification is required.' });
+  if (newPassword.length < 8) return sendJson(res, 400, { code: 'WEAK_PASSWORD', message: 'New password must contain at least 8 characters.' });
+  try {
+    const db = loadDb();
+    let account;
+    let verifiedWith = 'phone';
+    if (resetToken) {
+      const saved = passwordResetTokens.get(resetToken); passwordResetTokens.delete(resetToken);
+      if (!saved || saved.expiresAt < Date.now()) throw new Error('Social verification expired. Verify the account again.');
+      account = db.employeeAccounts.find((item) => item.active !== false && item.id === saved.accountId);
+      verifiedWith = saved.provider;
+    } else {
+      const verification = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(FIREBASE_WEB_API_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) });
+      const verified = await verification.json(); const user = verified.users?.[0]; const verifiedPhone = normalizeAccountPhone(user?.phoneNumber || '');
+      if (!verification.ok || !user || !verifiedPhone) throw new Error('Firebase phone verification is invalid or expired.');
+      account = db.employeeAccounts.find((item) => item.active !== false && safeEqual(normalizeAccountPhone(item.phone), verifiedPhone));
+    }
+    if (!account) return sendJson(res, 404, { code: 'ACCOUNT_NOT_LINKED', message: `This verified ${verifiedWith} account is not bound to an active account.` });
+    Object.assign(account, hashAccountPassword(newPassword), { updatedAt: nowIso() });
+    const employee = requireEmployee(db, account.employeeId);
+    createNotification(db, { employeeId: account.employeeId, type: 'SECURITY', title: 'Password changed', message: `${employee?.fullName || account.username} changed the account password after ${verifiedWith} verification.` });
+    saveDb(db);
+    sendJson(res, 200, { ok: true, message: 'Password changed successfully. You can now sign in.' });
+  } catch (error) {
+    sendJson(res, 401, { code: 'VERIFICATION_INVALID', message: error.message || 'Phone verification failed.' });
+  }
+}
+
 function oauthConfig(provider) {
   if (provider === 'google') return GOOGLE_OAUTH_CLIENT_ID && GOOGLE_OAUTH_CLIENT_SECRET ? { clientId: GOOGLE_OAUTH_CLIENT_ID, secret: GOOGLE_OAUTH_CLIENT_SECRET, authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', profile: 'https://openidconnect.googleapis.com/v1/userinfo', scope: 'openid email profile' } : null;
-  if (provider === 'facebook') return FACEBOOK_OAUTH_CLIENT_ID && FACEBOOK_OAUTH_CLIENT_SECRET ? { clientId: FACEBOOK_OAUTH_CLIENT_ID, secret: FACEBOOK_OAUTH_CLIENT_SECRET, authorize: 'https://www.facebook.com/v23.0/dialog/oauth', token: 'https://graph.facebook.com/v23.0/oauth/access_token', profile: 'https://graph.facebook.com/me?fields=id,name,email', scope: 'email,public_profile' } : null;
+  if (provider === 'facebook') return FACEBOOK_OAUTH_CLIENT_ID && FACEBOOK_OAUTH_CLIENT_SECRET ? { clientId: FACEBOOK_OAUTH_CLIENT_ID, secret: FACEBOOK_OAUTH_CLIENT_SECRET, authorize: 'https://www.facebook.com/v23.0/dialog/oauth', token: 'https://graph.facebook.com/v23.0/oauth/access_token', profile: 'https://graph.facebook.com/me?fields=id,name,email,picture.width(512).height(512)', scope: 'email,public_profile' } : null;
   return null;
+}
+
+function socialProfilePhotoUrl(provider, profile) {
+  if (provider !== 'facebook') return '';
+  const candidate = String(profile?.picture?.data?.url || profile?.photoUrl || '').trim();
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch { return ''; }
+}
+
+function syncFacebookEmployeePhoto(db, account, photoUrl) {
+  if (!photoUrl || !account?.employeeId) return false;
+  const employee = db.employees.find((item) => item.id === account.employeeId);
+  if (!employee || employee.photoUrl === photoUrl) return false;
+  employee.photoUrl = photoUrl;
+  employee.updatedAt = nowIso();
+  return true;
+}
+
+async function refreshBoundFacebookPhoto(employeeId) {
+  if (!FACEBOOK_OAUTH_CLIENT_ID || !FACEBOOK_OAUTH_CLIENT_SECRET || !employeeId) return false;
+  const db = loadDb();
+  const account = db.employeeAccounts.find((item) => item.active !== false && item.employeeId === employeeId && item.socialIdentities?.facebook?.id);
+  if (!account) return false;
+  const cacheKey = account.id || employeeId;
+  if (Number(facebookPhotoSyncAt.get(cacheKey) || 0) > Date.now()) return false;
+  facebookPhotoSyncAt.set(cacheKey, Date.now() + 15 * 60 * 1000);
+  try {
+    const profileUrl = new URL(`https://graph.facebook.com/v23.0/${encodeURIComponent(account.socialIdentities.facebook.id)}`);
+    profileUrl.searchParams.set('fields', 'picture.width(512).height(512)');
+    profileUrl.searchParams.set('access_token', `${FACEBOOK_OAUTH_CLIENT_ID}|${FACEBOOK_OAUTH_CLIENT_SECRET}`);
+    const response = await fetch(profileUrl, { headers: { Accept: 'application/json' } });
+    const profile = await response.json();
+    if (!response.ok) throw new Error('Facebook profile refresh failed.');
+    const photoUrl = socialProfilePhotoUrl('facebook', profile);
+    if (!photoUrl) return false;
+    const freshDb = loadDb();
+    const freshAccount = freshDb.employeeAccounts.find((item) => item.id === account.id);
+    if (!freshAccount) return false;
+    freshAccount.socialIdentities = freshAccount.socialIdentities || {};
+    freshAccount.socialIdentities.facebook = { ...(freshAccount.socialIdentities.facebook || {}), photoUrl, photoSyncedAt: nowIso() };
+    const changed = syncFacebookEmployeePhoto(freshDb, freshAccount, photoUrl);
+    if (changed || freshAccount.socialIdentities.facebook.photoUrl === photoUrl) saveDb(freshDb);
+    return changed;
+  } catch {
+    facebookPhotoSyncAt.set(cacheKey, Date.now() + 2 * 60 * 1000);
+    return false;
+  }
+}
+
+async function refreshAllBoundFacebookPhotos() {
+  const db = loadDb();
+  const employeeIds = db.employeeAccounts
+    .filter((item) => item.active !== false && item.employeeId && item.socialIdentities?.facebook?.id)
+    .map((item) => item.employeeId);
+  await Promise.all(employeeIds.map((employeeId) => refreshBoundFacebookPhoto(employeeId)));
 }
 
 function oauthCallbackUrl(req, provider) {
@@ -1105,6 +1208,7 @@ function handleOauthStart(req, res, url, provider) {
   oauthStates.set(state, {
     provider,
     accountId: account?.id || '',
+    mode: url.searchParams.get('mode') === 'reset' ? 'reset' : 'login',
     expiresAt: Date.now() + 10 * 60 * 1000
   });
   const target = new URL(config.authorize);
@@ -1129,13 +1233,21 @@ async function handleOauthCallback(req, res, url, provider) {
       ? db.employeeAccounts.find((item) => item.active !== false && item.id === saved.accountId)
       : db.employeeAccounts.find((item) => item.active !== false && item.socialIdentities?.[provider]?.id === providerId);
     if (!dbAccount) return send(res, 302, '', { Location: '/?authError=No%20linked%20managed%20account%20was%20found' });
+    if (saved.mode === 'reset') {
+      const resetToken = crypto.randomBytes(32).toString('base64url');
+      passwordResetTokens.set(resetToken, { accountId: dbAccount.id, provider, expiresAt: Date.now() + 10 * 60 * 1000 });
+      return send(res, 302, '', { Location: `/?resetToken=${encodeURIComponent(resetToken)}&resetProvider=${encodeURIComponent(provider)}` });
+    }
     if (saved.accountId) {
       const duplicate = db.employeeAccounts.find((item) => item.id !== dbAccount.id && item.socialIdentities?.[provider]?.id === providerId);
       if (duplicate) return send(res, 302, '', { Location: `${roleHomePath(dbAccount.role)}?authError=${encodeURIComponent(`This ${provider} account is already connected to another managed account`)}` });
       dbAccount.socialIdentities = dbAccount.socialIdentities || {};
-      dbAccount.socialIdentities[provider] = { id: providerId, email, name: cleanDisplayText(profile.name || '', 100), linkedAt: nowIso() };
+      const photoUrl = socialProfilePhotoUrl(provider, profile);
+      dbAccount.socialIdentities[provider] = { id: providerId, email, name: cleanDisplayText(profile.name || '', 100), photoUrl, linkedAt: nowIso() };
       dbAccount.updatedAt = nowIso(); saveDb(db);
     }
+    const facebookPhotoUrl = socialProfilePhotoUrl(provider, profile);
+    if (syncFacebookEmployeePhoto(db, dbAccount, facebookPhotoUrl)) saveDb(db);
     createBrowserSession(req, res, { role: dbAccount.role || 'employee', username: dbAccount.username, employeeId: dbAccount.employeeId || '' });
     return send(res, 302, '', { Location: `${roleHomePath(dbAccount.role || 'employee')}?authSuccess=${encodeURIComponent(`${provider[0].toUpperCase() + provider.slice(1)} account connected`)}` });
   } catch { return send(res, 302, '', { Location: '/?authError=Social%20sign-in%20failed' }); }
@@ -2693,6 +2805,41 @@ async function handleAttendanceReview(res, body) {
   sendJson(res, 200, { attendance: record });
 }
 
+async function handleEditAttendanceRecord(res, recordId, body, actor) {
+  if (!EMERGENCY_ATTENDANCE_PASSWORD || !safeEqual(String(body.password || ''), EMERGENCY_ATTENDANCE_PASSWORD)) {
+    sendJson(res, 403, { code: 'INVALID_EMERGENCY_PASSWORD', message: 'Incorrect emergency attendance password.' });
+    return;
+  }
+  const db = loadDb();
+  const record = db.attendance.find((item) => item.id === recordId);
+  if (!record) return sendJson(res, 404, { code: 'ATTENDANCE_NOT_FOUND', message: 'Attendance record not found.' });
+  const employee = db.employees.find((item) => item.id === record.employeeId && item.active !== false);
+  if (!employee) return sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee not found.' });
+  const type = upperDisplayText(body.attendanceType || record.attendanceType || record.type || '', 32);
+  if (!['TIME_IN', 'TIME_OUT'].includes(type)) return sendJson(res, 400, { code: 'INVALID_ATTENDANCE_TYPE', message: 'Attendance type must be TIME_IN or TIME_OUT.' });
+  const scanDate = new Date(body.scannedAt || record.scannedAt);
+  if (Number.isNaN(scanDate.getTime())) return sendJson(res, 400, { code: 'INVALID_SCAN_TIME', message: 'Enter a valid attendance date and time.' });
+  const status = type === 'TIME_IN' ? computeTimeInStatus(employee, scanDate) : computeTimeOutStatus(employee, scanDate);
+  Object.assign(record, {
+    attendanceType: type,
+    type,
+    scannedAt: scanDate.toISOString(),
+    punctuality: status.punctuality,
+    lateMinutes: status.lateMinutes || 0,
+    earlyOutMinutes: status.earlyOutMinutes || 0,
+    statusText: status.statusText,
+    accepted: true,
+    source: 'SERVER_ADMIN_EDIT',
+    reason: cleanDisplayText(body.reason || record.reason || 'Attendance correction', 120),
+    reviewStatus: 'VERIFIED',
+    reviewedBy: cleanDisplayText(actor?.username || 'Administrator', 80),
+    reviewedAt: nowIso(),
+    updatedAt: nowIso()
+  });
+  saveDb(db);
+  sendJson(res, 200, { attendance: record });
+}
+
 function routeStatic(req, res, pathname) {
   const pageRoutes = {
     '/': 'views/dashboard.html',
@@ -2741,24 +2888,30 @@ function routeStatic(req, res, pathname) {
 }
 
 function isPublicApi(pathname, method) {
-<<<<<<< HEAD
-  return method === 'POST' && ['/api/auth/login', '/api/auth/check-username'].includes(pathname);
-=======
-  return (method === 'POST' && ['/api/auth/login', '/api/auth/password-reset-request', '/api/auth/firebase'].includes(pathname)) || (method === 'GET' && /^\/api\/auth\/oauth\/(google|facebook)(\/callback)?$/.test(pathname));
+  return (method === 'POST' && [
+    '/api/auth/login',
+    '/api/auth/check-username',
+    '/api/auth/password-reset-request',
+    '/api/auth/password-reset',
+    '/api/auth/firebase'
+  ].includes(pathname)) || (method === 'GET' && (pathname === '/api/auth/firebase-config' || /^\/api\/auth\/oauth\/(google|facebook)(\/callback)?$/.test(pathname)));
 }
 
 async function handleFirebaseAuth(req, res, body) {
   if (!FIREBASE_WEB_API_KEY || !FIREBASE_PROJECT_ID) return sendJson(res, 503, { code: 'FIREBASE_NOT_CONFIGURED', message: 'Firebase Authentication is not configured.' });
   const idToken = String(body.idToken || ''); const requestedProvider = String(body.provider || '').toLowerCase(); const mode = body.mode === 'link' ? 'link' : 'login';
-  if (!idToken || !['google', 'facebook'].includes(requestedProvider)) return sendJson(res, 400, { code: 'INVALID_FIREBASE_AUTH', message: 'A Firebase ID token and supported provider are required.' });
+  if (!idToken || !['google', 'facebook', 'phone'].includes(requestedProvider)) return sendJson(res, 400, { code: 'INVALID_FIREBASE_AUTH', message: 'A Firebase ID token and supported provider are required.' });
   try {
     const verification = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(FIREBASE_WEB_API_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) });
     const verified = await verification.json(); const user = verified.users?.[0];
     if (!verification.ok || !user || user.validSince === undefined) throw new Error('Firebase rejected the identity token.');
-    const providerName = `${requestedProvider}.com`; const identity = (user.providerUserInfo || []).find((item) => item.providerId === providerName);
-    if (!identity?.rawId) return sendJson(res, 400, { code: 'PROVIDER_MISMATCH', message: `The Firebase account is not authenticated with ${requestedProvider}.` });
+    const providerName = requestedProvider === 'phone' ? 'phone' : `${requestedProvider}.com`; const identity = (user.providerUserInfo || []).find((item) => item.providerId === providerName);
+    const verifiedPhone = requestedProvider === 'phone' ? normalizeAccountPhone(user.phoneNumber || identity?.phoneNumber || identity?.rawId || '') : '';
+    if (requestedProvider === 'phone' && !verifiedPhone) return sendJson(res, 400, { code: 'PROVIDER_MISMATCH', message: 'Firebase did not return a verified phone number.' });
+    if (requestedProvider !== 'phone' && !identity?.rawId) return sendJson(res, 400, { code: 'PROVIDER_MISMATCH', message: `The Firebase account is not authenticated with ${requestedProvider}.` });
     const db = loadDb(); let account;
     if (mode === 'link') {
+      if (requestedProvider === 'phone') return sendJson(res, 400, { code: 'PHONE_LINK_NOT_SUPPORTED', message: 'Bind the phone number from Account & Security before using phone verification login.' });
       const session = validSession(req);
       if (!session || !['employee', 'hr', 'admin'].includes(session.role)) return sendJson(res, 401, { code: 'ACCOUNT_AUTH_REQUIRED', message: 'Sign in before linking an account.' });
       const currentAccount = db.employeeAccounts.find((item) => item.active !== false && item.username === session.username);
@@ -2767,16 +2920,20 @@ async function handleFirebaseAuth(req, res, body) {
       account = currentAccount;
       if (!account) return sendJson(res, 404, { code: 'ACCOUNT_NOT_FOUND', message: 'This sign-in is configured through environment credentials. Create a managed account with the same username before linking social login.' });
       account.socialIdentities = account.socialIdentities || {};
-      account.socialIdentities[requestedProvider] = { id: identity.rawId, firebaseUid: user.localId, email: String(identity.email || user.email || '').toLowerCase(), name: cleanDisplayText(identity.displayName || user.displayName || '', 100), linkedAt: nowIso() };
+      const photoUrl = socialProfilePhotoUrl(requestedProvider, { photoUrl: identity.photoUrl || user.photoUrl });
+      account.socialIdentities[requestedProvider] = { id: identity.rawId, firebaseUid: user.localId, email: String(identity.email || user.email || '').toLowerCase(), name: cleanDisplayText(identity.displayName || user.displayName || '', 100), photoUrl, linkedAt: nowIso() };
       account.updatedAt = nowIso(); saveDb(db);
     } else {
-      account = db.employeeAccounts.find((item) => item.active !== false && item.socialIdentities?.[requestedProvider]?.id === identity.rawId);
-      if (!account) return sendJson(res, 404, { code: 'SOCIAL_ACCOUNT_NOT_LINKED', message: `This ${requestedProvider} account is not linked yet. Sign in with your username first, then connect it in Account & Security.` });
+      account = requestedProvider === 'phone'
+        ? db.employeeAccounts.find((item) => item.active !== false && safeEqual(normalizeAccountPhone(item.phone), verifiedPhone))
+        : db.employeeAccounts.find((item) => item.active !== false && item.socialIdentities?.[requestedProvider]?.id === identity.rawId);
+      if (!account) return sendJson(res, 404, { code: 'SOCIAL_ACCOUNT_NOT_LINKED', message: requestedProvider === 'phone' ? 'This verified phone number is not bound to an active account.' : `This ${requestedProvider} account is not linked yet. Sign in with your username first, then connect it in Account & Security.` });
     }
+    const firebaseFacebookPhoto = socialProfilePhotoUrl(requestedProvider, { photoUrl: identity?.photoUrl || user.photoUrl });
+    if (syncFacebookEmployeePhoto(db, account, firebaseFacebookPhoto)) saveDb(db);
     createBrowserSession(req, res, { role: account.role || 'employee', username: account.username, employeeId: account.employeeId });
     sendJson(res, 200, { ok: true, provider: requestedProvider, mode, redirectTo: roleHomePath(account.role || 'employee') });
   } catch (error) { sendJson(res, 401, { code: 'FIREBASE_TOKEN_INVALID', message: error.message || 'Firebase identity verification failed.' }); }
->>>>>>> cf13f62f1336acde192626d43f74c36514433cc9
 }
 
 function publicEmployeeAccount(account, db) {
@@ -2990,6 +3147,7 @@ async function handleRequest(req, res) {
     }
 
     if (method === 'GET' && pathname === '/api/employees') {
+      await refreshAllBoundFacebookPhotos();
       const db = loadDb();
       sendJson(res, 200, { employees: db.employees.map(safePublicEmployee) });
       return;
@@ -3003,7 +3161,12 @@ async function handleRequest(req, res) {
     }
 
     if (method === 'POST' && pathname === '/api/auth/password-reset-request') { await handlePasswordResetRequest(res, await readBody(req)); return; }
+    if (method === 'POST' && pathname === '/api/auth/password-reset') { await handleVerifiedPasswordReset(res, await readBody(req)); return; }
     if (method === 'POST' && pathname === '/api/auth/firebase') { await handleFirebaseAuth(req, res, await readBody(req)); return; }
+    if (method === 'GET' && pathname === '/api/auth/firebase-config') {
+      sendJson(res, 200, { apiKey: FIREBASE_WEB_API_KEY, authDomain: `${FIREBASE_PROJECT_ID}.firebaseapp.com`, projectId: FIREBASE_PROJECT_ID });
+      return;
+    }
     const oauthMatch = pathname.match(/^\/api\/auth\/oauth\/(google|facebook)(\/callback)?$/);
     if (method === 'GET' && oauthMatch) { if (oauthMatch[2]) await handleOauthCallback(req, res, url, oauthMatch[1]); else handleOauthStart(req, res, url, oauthMatch[1]); return; }
 
@@ -3014,6 +3177,7 @@ async function handleRequest(req, res) {
     if (accountMatch && method === 'DELETE') return handleDeleteEmployeeAccount(res, decodeURIComponent(accountMatch[1]));
 
     if (method === 'GET' && pathname === '/api/employee/home') {
+      await refreshBoundFacebookPhoto(req.auth.employeeId);
       const payload = buildPortalPayload(req.auth, url);
       return payload ? sendJson(res, 200, payload) : sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'This account is not linked to an active employee.' });
     }
@@ -3147,6 +3311,26 @@ async function handleRequest(req, res) {
 
     if (method === 'POST' && pathname === '/api/attendance/review') {
       await handleAttendanceReview(res, await readBody(req));
+      return;
+    }
+
+    const attendanceEditMatch = pathname.match(/^\/api\/admin\/attendance\/([^/]+)$/);
+    if (method === 'PATCH' && attendanceEditMatch) {
+      await handleEditAttendanceRecord(res, decodeURIComponent(attendanceEditMatch[1]), await readBody(req), req.auth);
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/clear-attendance') {
+      const body = await readBody(req);
+      const db = loadDb();
+      if (!verifyActorPassword(req.auth, body.password, db)) {
+        sendJson(res, 403, { code: 'INVALID_PASSWORD', message: 'Incorrect administrator password.' });
+        return;
+      }
+      const deleted = db.attendance.length;
+      db.attendance = [];
+      saveDb(db);
+      sendJson(res, 200, { ok: true, deleted });
       return;
     }
 

@@ -13,6 +13,9 @@
 #include <RTClib.h>
 #include <ArduinoJson.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
+#include <esp_idf_version.h>
+#include <Preferences.h>
 
 // =====================================================
 // ESP32-S3 R503 ATTENDANCE FIRMWARE - PROFESSIONAL OLED + OFFLINE SYNC
@@ -31,7 +34,7 @@
 
 
 const char* FIRMWARE_VERSION =
-    "4.4.0-render-https";
+    "5.0.0-24x7-reliability";
 
 // =====================================================
 // GPIO CONFIGURATION
@@ -89,14 +92,24 @@ constexpr uint32_t SD_SPI_FREQUENCY = 4000000;
 // DEVICE SETTINGS
 // =====================================================
 
-constexpr unsigned long WIFI_RETRY_INTERVAL_MS = 10000;
+// ===== 24/7 RELIABILITY SETTINGS - edit here when needed =====
+constexpr unsigned long WIFI_RETRY_INTERVAL_MS = 5000;
+constexpr unsigned long WIFI_RETRY_MAX_INTERVAL_MS = 120000;
 constexpr unsigned long SYNC_INTERVAL_MS = 15000;
 constexpr unsigned long HEARTBEAT_INTERVAL_MS = 10000;
 constexpr unsigned long DISPLAY_COMMAND_INTERVAL_MS = 2500;
 constexpr unsigned long DUPLICATE_FINGER_DELAY_MS = 3000;
 constexpr unsigned long READY_RESTORE_DELAY_MS = 2500;
 constexpr unsigned long FINGER_REMOVE_TIMEOUT_MS = 5000;
-constexpr uint16_t HEARTBEAT_HTTP_TIMEOUT_MS = 15000;
+constexpr uint16_t HEARTBEAT_HTTP_TIMEOUT_MS = 8000;
+constexpr uint16_t API_HTTP_TIMEOUT_MS = 8000;
+constexpr unsigned long OLED_SLEEP_TIMEOUT_MS = 60000;
+constexpr unsigned long FINGERPRINT_POLL_INTERVAL_MS = 55;
+constexpr unsigned long FINGERPRINT_RECOVERY_INTERVAL_MS = 30000;
+constexpr unsigned long FINGERPRINT_OPERATION_TIMEOUT_MS = 30000;
+constexpr unsigned long HEAP_LOG_INTERVAL_MS = 60000;
+constexpr uint8_t FINGERPRINT_RECOVERY_LIMIT = 3;
+constexpr uint32_t TASK_WATCHDOG_TIMEOUT_MS = 45000;
 
 constexpr uint8_t MAX_SYNC_PER_PASS = 10;
 
@@ -133,6 +146,10 @@ uint8_t enrollFingerprint(uint16_t id);
 bool deleteFingerprint(uint16_t id);
 size_t countPendingRecords();
 size_t countPendingEnrollmentRequests();
+void wakeOled(bool restartIdleTimer = true);
+void maintainOledProtection();
+void maintainFingerprintRecovery();
+void showSystemError(const char* component, const char* detail, const char* code);
 
 // =====================================================
 // RESPONSE MODEL
@@ -172,6 +189,18 @@ struct ApiResponse {
 // DEVICE STATE
 // =====================================================
 
+enum class DeviceState : uint8_t {
+  IDLE,
+  SCANNING,
+  PROCESSING,
+  SUCCESS,
+  ERROR,
+  OFFLINE,
+  SYNCING
+};
+
+DeviceState deviceState = DeviceState::IDLE;
+
 unsigned long lastWiFiAttempt = 0;
 unsigned long lastSyncAttempt = 0;
 unsigned long lastHeartbeatAttempt = 0;
@@ -192,6 +221,17 @@ bool serverReachable = false;
 int lastServerStatusCode = 0;
 String lastConnectionTitle = "";
 unsigned long lastIdleOledRefresh = 0;
+unsigned long lastDeviceActivityAt = 0;
+unsigned long lastFingerprintPollAt = 0;
+unsigned long lastFingerprintRecoveryAt = 0;
+unsigned long lastHeapLogAt = 0;
+unsigned long currentWiFiRetryIntervalMs = WIFI_RETRY_INTERVAL_MS;
+bool oledSleeping = false;
+String lastOledFrameKey = "";
+uint8_t fingerprintCommunicationErrors = 0;
+uint8_t fingerprintRecoveryAttempts = 0;
+Preferences recoveryPreferences;
+esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 bool idleCloseStatusActive = false;
 String idleCloseStatusColor = "BLUE";
@@ -213,6 +253,25 @@ String fitOledLine(const String& text) {
 void drawOledLine(uint8_t y, const String& text) {
   display.setCursor(0, y);
   display.print(fitOledLine(text));
+}
+
+void wakeOled(bool restartIdleTimer) {
+  if (!ENABLE_OLED || !oledReady) return;
+  if (oledSleeping) {
+    display.oled_command(SH110X_DISPLAYON);
+    oledSleeping = false;
+    lastOledFrameKey = "";
+    Serial.println("[OLED] Display awake.");
+  }
+  if (restartIdleTimer) lastDeviceActivityAt = millis();
+}
+
+void maintainOledProtection() {
+  if (!ENABLE_OLED || !oledReady || oledSleeping || feedbackActive) return;
+  if (millis() - lastDeviceActivityAt < OLED_SLEEP_TIMEOUT_MS) return;
+  display.oled_command(SH110X_DISPLAYOFF);
+  oledSleeping = true;
+  Serial.println("[OLED] Idle timeout; display sleeping.");
 }
 
 String connectionStatusTitle() {
@@ -254,6 +313,11 @@ void showOledScreen(
     return;
   }
 
+  wakeOled(true);
+  const String frameKey = title + '|' + line1 + '|' + line2 + '|' + line3 + '|' + line4;
+  if (frameKey == lastOledFrameKey) return;
+  lastOledFrameKey = frameKey;
+
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
   display.setTextSize(1);
@@ -270,12 +334,15 @@ void showOledScreen(
 }
 
 void showIdleOled() {
-  if (!ENABLE_OLED || !oledReady) {
+  if (!ENABLE_OLED || !oledReady || oledSleeping) {
     return;
   }
 
   const DateTime now = rtc.now();
   const String timeText = formatDisplayTime(now);
+  const String frameKey = connectionStatusTitle() + '|' + timeText + "|SCAN FINGERPRINT";
+  if (frameKey == lastOledFrameKey) return;
+  lastOledFrameKey = frameKey;
 
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
@@ -665,10 +732,15 @@ void resetIdleCloseStatus() {
 void applyIdleReadyColor() {
   if (idleCloseStatusActive) {
     applyDeviceColor(idleCloseStatusColor);
+    // Keep the fingerprint reader recognizable as ready without holding
+    // the Aura ring at steady full brightness.
+    r503BlueBreathing();
     return;
   }
 
   setRgb(false, false, true);
+  // R503 exposes animation speed, not a true brightness percentage.
+  // Breathing blue lowers average output while preserving the ready cue.
   r503BlueBreathing();
 }
 
@@ -779,11 +851,12 @@ void r503ShowSingleColorIndex(uint8_t colorIndex) {
 }
 
 void showReadyFeedback() {
-  // Normal work hours = blue ready. Closing status can override to
-  // white (pending time-out) or black/off (all timed out).
+  // Idle uses breathing blue instead of a steady full-brightness Aura ring.
   applyIdleReadyColor();
 
   feedbackActive = false;
+  deviceState = WiFi.status() == WL_CONNECTED ? DeviceState::IDLE : DeviceState::OFFLINE;
+  wakeOled(true);
   lastIdleOledRefresh = millis();
   showIdleOled();
 
@@ -792,6 +865,7 @@ void showReadyFeedback() {
 }
 
 void showProcessingFeedback() {
+  deviceState = DeviceState::PROCESSING;
   setRgb(false, true, true);
   r503CyanBreathing();
   beepFingerprintAccepted();
@@ -808,16 +882,17 @@ void showProcessingFeedback() {
 }
 
 void showOfflineFeedback() {
+  deviceState = DeviceState::OFFLINE;
   setRgb(true, true, false);
   r503YellowFlash();
   beepOffline();
   beginFeedback();
 
   showLiveScanStage(
-    "SERVER OFFLINE",
-    "RECORDED OFFLINE",
-    "PENDING SYNC",
-    formatDisplayTime(rtc.now())
+    "OFFLINE MODE",
+    "Attendance Saved",
+    "Syncing Later",
+    "CODE: API-01"
   );
 
   Serial.println(
@@ -826,6 +901,7 @@ void showOfflineFeedback() {
 }
 
 void showErrorFeedback(const String& message) {
+  deviceState = DeviceState::ERROR;
   // Red = error or rejected scan.
   setRgb(true, false, false);
   r503RedFlash();
@@ -854,6 +930,14 @@ void maintainFeedbackState() {
   ) {
     showReadyFeedback();
   }
+}
+
+void showSystemError(const char* component, const char* detail, const char* code) {
+  deviceState = DeviceState::ERROR;
+  setRgb(true, false, false);
+  if (fingerprintReady) r503RedFlash();
+  showOledScreen("! SYSTEM ERROR !", component, detail, String("CODE: ") + code, "CONTACT ADMIN");
+  Serial.printf("[SELF-TEST] %s - %s (%s)\n", component, detail, code);
 }
 
 // =====================================================
@@ -948,6 +1032,13 @@ String createFingerprintJson(
       fingerprintId;
   document["fingerprintConfidence"] =
       confidence;
+
+  // The ESP32 only knows the matched template ID. The server resolves the
+  // employee and decides Time In/Time Out when the unique event is synced.
+  document["employeeId"] = "";
+  document["attendanceType"] = "SERVER_CONTROLLED";
+  document["transactionId"] = document["eventId"];
+  document["syncStatus"] = "PENDING";
 
   // The server decides Time In vs Time Out.
   document["requestedAction"] =
@@ -1394,67 +1485,17 @@ void startWiFiConnection() {
 
 void waitForInitialWiFi() {
   startWiFiConnection();
-
-  const unsigned long startedAt =
-      millis();
-
-  while (
-    WiFi.status() != WL_CONNECTED &&
-    millis() - startedAt < 15000
-  ) {
-    showOledScreen(
-      "BOOTING",
-      "CONNECTING WIFI",
-      "PLEASE WAIT",
-      "",
-      ""
-    );
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    wasWiFiConnected = true;
-
-    Serial.println("[WIFI] Connected.");
-
-    Serial.print("[WIFI] Device IP: ");
-    Serial.println(WiFi.localIP());
-
-    Serial.print("[WIFI] RSSI: ");
-    Serial.println(WiFi.RSSI());
-
-    showOledScreen(
-      "WIFI CONNECTED",
-      "CHECKING SERVER",
-      "",
-      "",
-      ""
-    );
-    delay(700);
-  } else {
-    wasWiFiConnected = false;
-
-    showOledScreen(
-      "OFFLINE",
-      "WIFI NOT CONNECTED",
-      "LOCAL SCAN READY",
-      "",
-      ""
-    );
-
-    Serial.println(
-      "[WIFI] Offline mode active."
-    );
-  }
+  wasWiFiConnected = false;
+  deviceState = DeviceState::OFFLINE;
+  showOledScreen("OFFLINE MODE", "WiFi connecting", "Attendance Saved", "Syncing Later", "CODE: WIFI-01");
+  Serial.println("[WIFI] Connection continues in background; local scanning is ready.");
 }
 
 void maintainWiFiConnection() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!wasWiFiConnected) {
       wasWiFiConnected = true;
+      currentWiFiRetryIntervalMs = WIFI_RETRY_INTERVAL_MS;
       Serial.println("[WIFI] Reconnected.");
       showOledScreen(
         "WIFI RECONNECTED",
@@ -1463,7 +1504,6 @@ void maintainWiFiConnection() {
         "",
         ""
       );
-      delay(500);
       showReadyFeedback();
     }
     return;
@@ -1476,7 +1516,7 @@ void maintainWiFiConnection() {
 
   if (
     millis() - lastWiFiAttempt <
-    WIFI_RETRY_INTERVAL_MS
+    currentWiFiRetryIntervalMs
   ) {
     return;
   }
@@ -1491,6 +1531,8 @@ void maintainWiFiConnection() {
   );
 
   lastWiFiAttempt = millis();
+  currentWiFiRetryIntervalMs = min(currentWiFiRetryIntervalMs * 2UL, WIFI_RETRY_MAX_INTERVAL_MS);
+  Serial.printf("[WIFI] Next retry in %lu ms.\n", currentWiFiRetryIntervalMs);
 }
 
 // =====================================================
@@ -1675,7 +1717,7 @@ bool sendScanToServer(
   client.setInsecure();
   HTTPClient http;
 
-  http.setTimeout(30000);
+  http.setTimeout(API_HTTP_TIMEOUT_MS);
 
   if (!http.begin(client, API_URL)) {
     Serial.println(
@@ -1796,7 +1838,7 @@ void sendFingerprintScanStatus(const String& status) {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  http.setTimeout(8000);
+  http.setTimeout(API_HTTP_TIMEOUT_MS);
   if (!http.begin(client, fingerprintScanStatusUrl())) return;
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-Key", API_KEY);
@@ -1818,7 +1860,7 @@ bool sendEnrollmentRequestToServer(
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  http.setTimeout(30000);
+  http.setTimeout(API_HTTP_TIMEOUT_MS);
 
   if (!http.begin(client, enrollmentRequestUrl())) {
     Serial.println("[ENROLL API] HTTP initialization failed.");
@@ -2054,7 +2096,7 @@ void acknowledgeDisplayCommand(
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  http.setTimeout(8000);
+  http.setTimeout(API_HTTP_TIMEOUT_MS);
 
   if (!http.begin(client, displayCommandAckUrl())) {
     Serial.println("[COMMAND] ACK HTTP init failed.");
@@ -2085,7 +2127,7 @@ void pollDisplayCommand() {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  http.setTimeout(8000);
+  http.setTimeout(API_HTTP_TIMEOUT_MS);
 
   if (!http.begin(client, displayCommandUrl())) {
     Serial.println("[COMMAND] Display command HTTP init failed.");
@@ -2264,6 +2306,7 @@ void showApiFeedback(
     const ApiResponse& response,
     const DateTime& scanTime
 ) {
+  deviceState = response.accepted ? DeviceState::SUCCESS : DeviceState::ERROR;
   if (response.deviceDisplay.hasDisplay) {
     showDeviceDisplay(response.deviceDisplay);
     return;
@@ -2461,6 +2504,7 @@ void synchronizePendingRecords() {
   }
 
   syncInProgress = true;
+  deviceState = DeviceState::SYNCING;
 
   setRgb(false, true, true);
   r503CyanFlash();
@@ -2609,6 +2653,7 @@ void synchronizePendingEnrollmentRequests() {
   }
 
   syncInProgress = true;
+  deviceState = DeviceState::SYNCING;
 
   setRgb(false, true, true);
   r503CyanFlash();
@@ -2758,6 +2803,20 @@ bool readFingerprintMatch(
   if (imageStatus == FINGERPRINT_NOFINGER) {
     return false;
   }
+
+  wakeOled(true);
+  deviceState = DeviceState::SCANNING;
+  if (imageStatus == FINGERPRINT_PACKETRECIEVEERR) {
+    fingerprintCommunicationErrors++;
+    Serial.println("[R503] UART communication timeout (FP-02).");
+    if (fingerprintCommunicationErrors >= FINGERPRINT_RECOVERY_LIMIT) {
+      fingerprintReady = false;
+      fingerprintRecoveryAttempts = 0;
+      showSystemError("Fingerprint Sensor", "Communication Timeout", "FP-02");
+    }
+    return false;
+  }
+  fingerprintCommunicationErrors = 0;
 
   sendFingerprintScanStatus("FINGER_DETECTED");
 
@@ -3199,7 +3258,12 @@ uint8_t enrollFingerprint(uint16_t id) {
   setRgb(false, false, true);
   r503BlueBreathing();
 
+  unsigned long captureStartedAt = millis();
   while (status != FINGERPRINT_OK) {
+    if (millis() - captureStartedAt >= FINGERPRINT_OPERATION_TIMEOUT_MS) {
+      showSystemError("Fingerprint Sensor", "Enrollment Timeout", "FP-02");
+      return FINGERPRINT_PACKETRECIEVEERR;
+    }
     status = finger.getImage();
 
     if (status == FINGERPRINT_NOFINGER) {
@@ -3214,6 +3278,7 @@ uint8_t enrollFingerprint(uint16_t id) {
   }
 
   status = finger.image2Tz(1);
+  esp_task_wdt_reset();
 
   if (status != FINGERPRINT_OK) {
     Serial.println("[R503] First image conversion failed.");
@@ -3241,8 +3306,13 @@ uint8_t enrollFingerprint(uint16_t id) {
     "KEEP STEADY"
   );
   status = -1;
+  captureStartedAt = millis();
 
   while (status != FINGERPRINT_OK) {
+    if (millis() - captureStartedAt >= FINGERPRINT_OPERATION_TIMEOUT_MS) {
+      showSystemError("Fingerprint Sensor", "Enrollment Timeout", "FP-02");
+      return FINGERPRINT_PACKETRECIEVEERR;
+    }
     status = finger.getImage();
 
     if (status == FINGERPRINT_NOFINGER) {
@@ -3558,8 +3628,35 @@ bool initializeFingerprint() {
   );
 
   printFingerprintCount();
-  r503ColorShowcase();
+  // Do not run the blocking full-brightness color showcase during boot.
+  // Keep the requested low-average breathing blue ready indication.
+  r503BlueBreathing();
   return true;
+}
+
+bool recoverFingerprintSensorOnce() {
+  finger.begin(FINGERPRINT_BAUD);
+  if (!finger.verifyPassword()) return false;
+  fingerprintReady = true;
+  fingerprintCommunicationErrors = 0;
+  fingerprintRecoveryAttempts = 0;
+  printFingerprintCount();
+  r503BlueBreathing();
+  Serial.println("[R503] Sensor communication recovered.");
+  showReadyFeedback();
+  return true;
+}
+
+void maintainFingerprintRecovery() {
+  if (fingerprintReady || millis() - lastFingerprintRecoveryAt < FINGERPRINT_RECOVERY_INTERVAL_MS) return;
+  lastFingerprintRecoveryAt = millis();
+  if (fingerprintRecoveryAttempts < FINGERPRINT_RECOVERY_LIMIT) fingerprintRecoveryAttempts++;
+  Serial.print("[R503] Recovery attempt ");
+  Serial.print(fingerprintRecoveryAttempts);
+  Serial.print('/');
+  Serial.println(FINGERPRINT_RECOVERY_LIMIT);
+  if (recoverFingerprintSensorOnce()) return;
+  showSystemError("Fingerprint Sensor", "Not Detected", "FP-01");
 }
 
 void initializeFeedbackHardware() {
@@ -3581,9 +3678,52 @@ void initializeFeedbackHardware() {
 // ARDUINO SETUP AND LOOP
 // =====================================================
 
+void initializeTaskWatchdog() {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  esp_task_wdt_config_t watchdogConfig = {
+    .timeout_ms = TASK_WATCHDOG_TIMEOUT_MS,
+    .idle_core_mask = (1U << portNUM_PROCESSORS) - 1U,
+    .trigger_panic = true
+  };
+  esp_err_t result = esp_task_wdt_init(&watchdogConfig);
+  if (result == ESP_ERR_INVALID_STATE) result = esp_task_wdt_reconfigure(&watchdogConfig);
+#else
+  esp_err_t result = esp_task_wdt_init(TASK_WATCHDOG_TIMEOUT_MS / 1000U, true);
+#endif
+  if (result == ESP_OK || result == ESP_ERR_INVALID_STATE) esp_task_wdt_add(nullptr);
+  Serial.printf("[WATCHDOG] Task watchdog: %s (%lu ms).\n", result == ESP_OK ? "enabled" : "already active", TASK_WATCHDOG_TIMEOUT_MS);
+}
+
+const char* resetReasonText(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON: return "Power on";
+    case ESP_RST_SW: return "Software restart";
+    case ESP_RST_PANIC: return "Exception or watchdog panic";
+    case ESP_RST_TASK_WDT: return "Task watchdog timeout";
+    case ESP_RST_INT_WDT: return "Interrupt watchdog timeout";
+    case ESP_RST_BROWNOUT: return "Brownout";
+    default: return "Other reset source";
+  }
+}
+
+void printBootRecoveryReason() {
+  recoveryPreferences.begin("gms-recovery", false);
+  const String requestedReason = recoveryPreferences.getString("reason", "");
+  recoveryPreferences.remove("reason");
+  bootResetReason = esp_reset_reason();
+  Serial.print("[RECOVERY] ESP reset reason: ");
+  Serial.println(resetReasonText(bootResetReason));
+  if (!requestedReason.isEmpty()) {
+    Serial.print("[RECOVERY] Stored restart reason: ");
+    Serial.println(requestedReason);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
+  printBootRecoveryReason();
+  initializeTaskWatchdog();
 
   Serial.println();
   Serial.println(
@@ -3603,18 +3743,12 @@ void setup() {
       );
 
   if (!wireStarted) {
-    showErrorFeedback(
-      "I2C initialization failed."
-    );
-
-    while (true) {
-      delay(1000);
-    }
+    Serial.println("[SELF-TEST] I2C bus failed; OLED and RTC unavailable (SYS-01).");
   }
 
-  Wire.setClock(100000);
+  if (wireStarted) Wire.setClock(100000);
 
-  initializeOled();
+  if (wireStarted) initializeOled();
 
   showOledScreen(
     "BOOTING",
@@ -3625,20 +3759,7 @@ void setup() {
   );
 
   if (!initializeStorage()) {
-    showOledScreen(
-      "STORAGE FAILED",
-      "LittleFS failed",
-      "SD unavailable",
-      "Check storage",
-      ""
-    );
-
-    setRgb(true, false, false);
-    beepError();
-
-    while (true) {
-      delay(1000);
-    }
+    showSystemError("Local Storage", "Mount Failed", "MEM-01");
   }
 
   showOledScreen(
@@ -3649,25 +3770,19 @@ void setup() {
     ""
   );
 
-  rtcReady = initializeRtc();
+  rtcReady = wireStarted && initializeRtc();
   if (!rtcReady) {
-    showErrorFeedback(
-      "DS3231 not detected."
-    );
-
-    while (true) {
-      delay(1000);
-    }
+    showSystemError("RTC Clock", "Invalid / Missing", "RTC-01");
   }
 
-  if (!initializeFingerprint()) {
-    showErrorFeedback(
-      "R503 fingerprint sensor not detected."
-    );
-
-    while (true) {
-      delay(1000);
-    }
+  for (uint8_t attempt = 0; attempt < FINGERPRINT_RECOVERY_LIMIT && !fingerprintReady; attempt++) {
+    Serial.print("[R503] Startup attempt "); Serial.println(attempt + 1);
+    if (initializeFingerprint()) break;
+    delay(250);
+  }
+  if (!fingerprintReady) {
+    fingerprintRecoveryAttempts = FINGERPRINT_RECOVERY_LIMIT;
+    showSystemError("Fingerprint Sensor", "Not Detected", "FP-01");
   }
 
   waitForInitialWiFi();
@@ -3704,23 +3819,31 @@ void setup() {
   }
 
   lastConnectionTitle = connectionStatusTitle();
-  showReadyFeedback();
+  lastDeviceActivityAt = millis();
+  if (bootResetReason == ESP_RST_PANIC || bootResetReason == ESP_RST_TASK_WDT || bootResetReason == ESP_RST_INT_WDT) {
+    showSystemError("System Recovery", resetReasonText(bootResetReason), "SYS-01");
+    beginFeedback(5000);
+  } else if (fingerprintReady) {
+    showReadyFeedback();
+  }
 }
 
 void loop() {
   handleSerialCommands();
   maintainWiFiConnection();
   maintainFeedbackState();
+  maintainOledProtection();
+  maintainFingerprintRecovery();
 
   if (!feedbackActive && !syncInProgress) {
     const String currentTitle = connectionStatusTitle();
-    if (
-      currentTitle != lastConnectionTitle ||
-      millis() - lastIdleOledRefresh >= 1000
-    ) {
+    if (currentTitle != lastConnectionTitle) {
       lastConnectionTitle = currentTitle;
-      lastIdleOledRefresh = millis();
+      wakeOled(true);
       showReadyFeedback();
+    } else if (!oledSleeping && millis() - lastIdleOledRefresh >= 60000) {
+      lastIdleOledRefresh = millis();
+      showIdleOled();
     }
   }
 
@@ -3756,21 +3879,25 @@ void loop() {
     synchronizePendingEnrollmentRequests();
   }
 
-  uint16_t fingerprintId = 0;
-  uint16_t confidence = 0;
-
-  if (
-    readFingerprintMatch(
-      fingerprintId,
-      confidence
-    )
-  ) {
-    processFingerprint(
-      fingerprintId,
-      confidence
-    );
+  if (fingerprintReady && millis() - lastFingerprintPollAt >= FINGERPRINT_POLL_INTERVAL_MS) {
+    lastFingerprintPollAt = millis();
+    uint16_t fingerprintId = 0;
+    uint16_t confidence = 0;
+    if (readFingerprintMatch(fingerprintId, confidence)) processFingerprint(fingerprintId, confidence);
   }
 
-  delay(50);
+  if (millis() - lastHeapLogAt >= HEAP_LOG_INTERVAL_MS) {
+    lastHeapLogAt = millis();
+    Serial.printf("[MEMORY] Free heap: %u bytes; minimum: %u bytes.\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
+  }
+
+  esp_task_wdt_reset();
+  yield();
 }
+
+/*
+  Existing attendance, enrollment, queue replay, and server display-command
+  functions above remain the source of truth. The loop intentionally has no
+  fixed delay: each maintenance job runs from its own millis() schedule.
+*/
 

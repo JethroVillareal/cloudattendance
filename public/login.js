@@ -13,7 +13,7 @@ function toggleSecret(inputId, buttonId, label) {
   const button = byId(buttonId);
   const reveal = input.type === 'password';
   input.type = reveal ? 'text' : 'password';
-  button.textContent = reveal ? 'Hide' : 'Show';
+  button.classList.toggle('is-visible', reveal);
   button.setAttribute('aria-label', `${reveal ? 'Hide' : 'Show'} ${label}`);
 }
 
@@ -53,17 +53,6 @@ async function submitLogin(event) {
 
 byId('toggleLoginPassword').addEventListener('click', () => toggleSecret('loginPassword', 'toggleLoginPassword', 'password'));
 byId('loginForm').addEventListener('submit', submitLogin);
-byId('forgotPasswordBtn').addEventListener('click', async () => {
-  const username = byId('loginUsername').value.trim() || window.prompt('Enter the username or bound phone number for the account:');
-  if (!username) return;
-  setMessage('Sending your reset request...', 'working');
-  try {
-    const response = await fetch('/api/auth/password-reset-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.message || 'Could not submit the reset request.');
-    setMessage(result.message, 'success');
-  } catch (error) { setMessage(error.message); }
-});
 const authError = new URLSearchParams(location.search).get('authError');
 if (authError) { setMessage(authError); history.replaceState({}, '', '/'); }
 const rememberedUsername = localStorage.getItem('gmsRememberedUsername') || '';

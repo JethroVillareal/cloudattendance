@@ -1461,15 +1461,119 @@
     const headers = ['DATE', 'DAY', 'TIME IN', 'TIME OUT', 'WORK HOURS', 'STATUS'];
     ctx.fillStyle = '#eaf3ff'; ctx.fillRect(48, 340, 1304, 52);
     ctx.fillStyle = '#40516a'; ctx.font = '700 15px Arial'; headers.forEach((header, index) => ctx.fillText(header, columns[index] + 12, 373));
+    const photoStatusTheme = (statusValue) => {
+      const status = String(statusValue || '').toUpperCase().replaceAll('_', ' ');
+      if (status.includes('ABSENT') || status.includes('INCOMPLETE')) return { fill: '#fff0f2', stroke: '#ff9eaa', text: '#c9273b' };
+      if (status.includes('LATE') || status.includes('WORKED DAY OFF') || status.includes('EARLY')) return { fill: '#fff6d9', stroke: '#f2c345', text: '#9a5700' };
+      if (status.includes('DAY OFF') || status.includes('NO SCHEDULE')) return { fill: '#eef3f8', stroke: '#bdcada', text: '#52647a' };
+      if (status.includes('EMERGENCY')) return { fill: '#fff0e5', stroke: '#f2a462', text: '#b74814' };
+      if (status.includes('EXCUSED') || status.includes('LEAVE')) return { fill: '#f1edff', stroke: '#b9a5f4', text: '#6548ad' };
+      if (status.includes('ON TIME') || status.includes('PRESENT') || status.includes('COMPLETED')) return { fill: '#e5fbef', stroke: '#67db98', text: '#087044' };
+      return { fill: '#edf5ff', stroke: '#9bbfe9', text: '#285f9f' };
+    };
     cards.forEach((card, rowIndex) => {
       const y = 392 + rowIndex * 54;
       ctx.fillStyle = rowIndex % 2 ? '#f8fbff' : '#ffffff'; ctx.fillRect(48, y, 1304, 54);
       ctx.fillStyle = '#26364e'; ctx.font = '18px Arial';
       const values = [card.dateKey, card.dayLabel, card.actualTimeIn || '—', card.actualTimeOut || '—', card.workDuration || hoursText(card.paidHours), card.status];
       values.forEach((value, index) => ctx.fillText(String(value).replaceAll('_', ' '), columns[index] + 12, y + 34));
+      const statusText = String(card.status || 'Unknown').replaceAll('_', ' ').toUpperCase();
+      const theme = photoStatusTheme(statusText);
+      const badgeX = columns[5] + 8;
+      const badgeY = y + 9;
+      const badgeWidth = 222;
+      const badgeHeight = 36;
+      ctx.beginPath(); ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 18);
+      ctx.fillStyle = theme.fill; ctx.fill();
+      ctx.strokeStyle = theme.stroke; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = theme.text; ctx.font = '700 14px Arial'; ctx.textAlign = 'center';
+      ctx.fillText(statusText, badgeX + badgeWidth / 2, badgeY + 23);
+      ctx.textAlign = 'left';
     });
     const link = document.createElement('a');
     link.download = `${employee.fullName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${from}-${to}-time-card.png`;
+    link.href = canvas.toDataURL('image/png'); link.click();
+  }
+
+  function saveFullTimeCardPortraitPhoto() {
+    if (!fullTimeCardPhotoData) return toast('Open a Full Time Card report first.');
+    const { employee, cards, from, to, requiredPaidHours = 8 } = fullTimeCardPhotoData;
+    const width = 1640;
+    const height = 2332;
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const formatReportDate = (value) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const roundedBox = (x, y, boxWidth, boxHeight, radius, fill, stroke, lineWidth = 2) => {
+      ctx.beginPath(); ctx.roundRect(x, y, boxWidth, boxHeight, radius);
+      ctx.fillStyle = fill; ctx.fill();
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
+    };
+    const statusTheme = (statusValue) => {
+      const status = String(statusValue || '').toUpperCase().replaceAll('_', ' ');
+      if (status.includes('ABSENT') || status.includes('INCOMPLETE')) return ['#fff0f2', '#ff9eaa', '#c9273b'];
+      if (status.includes('LATE') || status.includes('WORKED DAY OFF') || status.includes('EARLY')) return ['#fff6d9', '#f2c345', '#9a5700'];
+      if (status.includes('DAY OFF') || status.includes('NO SCHEDULE')) return ['#eef3f8', '#bdcada', '#52647a'];
+      if (status.includes('EMERGENCY')) return ['#fff0e5', '#f2a462', '#b74814'];
+      if (status.includes('EXCUSED') || status.includes('LEAVE')) return ['#f1edff', '#b9a5f4', '#6548ad'];
+      if (status.includes('ON TIME') || status.includes('PRESENT') || status.includes('COMPLETED')) return ['#e5fbef', '#67db98', '#087044'];
+      return ['#edf5ff', '#9bbfe9', '#285f9f'];
+    };
+
+    ctx.fillStyle = '#f7faff'; ctx.fillRect(0, 0, width, height);
+    const topGradient = ctx.createLinearGradient(0, 0, width, 0);
+    topGradient.addColorStop(0, '#2878ed'); topGradient.addColorStop(.55, '#26afe0'); topGradient.addColorStop(1, '#087966');
+    ctx.fillStyle = topGradient; ctx.fillRect(0, 0, width, 10);
+    ctx.strokeStyle = '#d4e1ef'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, width - 2, height - 2);
+    ctx.fillStyle = '#1d5fc3'; ctx.font = '700 22px Arial'; ctx.fillText('GMS/GWD (GMS)', 50, 72);
+    ctx.fillStyle = '#10203b'; ctx.font = '700 48px Arial'; ctx.fillText('Employee Time Card Report', 50, 148);
+    ctx.fillStyle = '#64748b'; ctx.font = '22px Arial'; ctx.fillText('Semi-monthly cutoff attendance time card.', 50, 198);
+    roundedBox(1310, 50, 270, 66, 33, '#eff7ff', '#a9ccfa');
+    ctx.fillStyle = '#245fc8'; ctx.font = '700 18px Arial'; ctx.textAlign = 'center'; ctx.fillText('TIME CARD VIEW', 1445, 91); ctx.textAlign = 'left';
+
+    const generated = new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const info = [
+      ['EMPLOYEE', employee.fullName], ['FINGERPRINT ID', employee.fingerprintId ?? 'Not linked'], ['ACCOUNT STATUS', 'Active'],
+      ['CUTOFF RANGE', `${formatReportDate(from)} - ${formatReportDate(to)}`], ['GENERATED', generated], ['DAILY TARGET', `${Number(requiredPaidHours)}h / day`]
+    ];
+    info.forEach(([label, value], index) => {
+      const column = index % 3;
+      const row = Math.floor(index / 3);
+      const x = 50 + column * 515;
+      const y = 245 + row * 150;
+      roundedBox(x, y, 480, 126, 22, '#ffffff', '#cbdced');
+      ctx.fillStyle = '#667790'; ctx.font = '700 16px Arial'; ctx.fillText(label, x + 24, y + 42);
+      ctx.fillStyle = '#17233a'; ctx.font = '700 25px Arial'; ctx.fillText(String(value), x + 24, y + 88);
+    });
+
+    const columns = [50, 290, 520, 760, 1000, 1270];
+    const headers = ['DATE', 'DAY', 'TIME IN', 'TIME OUT', 'WORK HOURS', 'STATUS'];
+    const tableTop = 570;
+    const headerHeight = 62;
+    const tableWidth = 1540;
+    roundedBox(50, tableTop, tableWidth, height - tableTop - 48, 22, '#ffffff', '#cbdced');
+    ctx.save(); ctx.beginPath(); ctx.roundRect(50, tableTop, tableWidth, headerHeight, [22, 22, 0, 0]); ctx.clip();
+    ctx.fillStyle = '#eaf3ff'; ctx.fillRect(50, tableTop, tableWidth, headerHeight); ctx.restore();
+    ctx.fillStyle = '#40516a'; ctx.font = '700 16px Arial'; headers.forEach((header, index) => ctx.fillText(header, columns[index] + 14, tableTop + 39));
+    const bodyTop = tableTop + headerHeight;
+    const rowHeight = Math.floor((height - bodyTop - 48) / Math.max(cards.length, 1));
+    cards.forEach((card, rowIndex) => {
+      const y = bodyTop + rowIndex * rowHeight;
+      ctx.fillStyle = rowIndex % 2 ? '#f2f5f8' : '#ffffff'; ctx.fillRect(52, y, tableWidth - 4, rowHeight);
+      ctx.strokeStyle = '#e2eaf3'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(52, y); ctx.lineTo(1588, y); ctx.stroke();
+      const values = [formatReportDate(card.dateKey), card.dayLabel, card.actualTimeIn || '—', card.actualTimeOut || '—', card.workDuration || hoursText(card.paidHours)];
+      ctx.fillStyle = '#26364e'; ctx.font = '20px Arial';
+      values.forEach((value, index) => ctx.fillText(String(value).replaceAll('_', ' '), columns[index] + 14, y + Math.round(rowHeight * .58)));
+      const statusText = String(card.status || 'Unknown').replaceAll('_', ' ').toUpperCase();
+      const [fill, stroke, textColor] = statusTheme(statusText);
+      const badgeHeight = Math.min(54, rowHeight - 22);
+      const badgeY = y + Math.round((rowHeight - badgeHeight) / 2);
+      roundedBox(columns[5] + 8, badgeY, 270, badgeHeight, badgeHeight / 2, fill, stroke);
+      ctx.fillStyle = textColor; ctx.font = '700 17px Arial'; ctx.textAlign = 'center';
+      ctx.fillText(statusText, columns[5] + 143, badgeY + Math.round(badgeHeight * .64)); ctx.textAlign = 'left';
+    });
+    const link = document.createElement('a');
+    link.download = `timecard-${employee.fullName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${from}-to-${to}.png`;
     link.href = canvas.toDataURL('image/png'); link.click();
   }
 
@@ -1547,12 +1651,11 @@
 
   async function openFullTimeCard(record) {
     if (!record) return toast('Select an employee record first.');
-    const params = buildTimeCardParams();
-    params.set('employeeId', record.employeeId);
+    const params = buildFullTimeCardParams(record.employeeId);
     const result = await api(`/api/timecard?${params}`);
     fullTimeCardExportParams = params;
-    const filteredCards = (result.timeCards || []).filter(passesTimeCardAdvancedFilters);
-    fullTimeCardPhotoData = { employee: record, cards: filteredCards, from: result.from, to: result.to };
+    const filteredCards = result.timeCards || [];
+    fullTimeCardPhotoData = { employee: record, cards: filteredCards, from: result.from, to: result.to, requiredPaidHours: result.settings?.requiredPaidHours || 8 };
     const formatDate = (value) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     const rows = filteredCards.map((card) => `<tr>
       <td>${esc(formatDate(card.dateKey))}</td><td>${esc(card.dayLabel)}</td><td>${esc(card.actualTimeIn || '—')}</td>
@@ -1564,16 +1667,16 @@
     backdrop.dataset.modalMode = 'full-timecard';
     if ($('modalTitle')) $('modalTitle').textContent = 'Employee Time Card Report';
     if ($('modalBody')) $('modalBody').innerHTML = `<div class="timecard-report">
-      <div class="report-top"><div><span class="report-brand">GMS / GWD</span><h2>Employee Time Card Report</h2><p>Semi-monthly cutoff attendance time card.</p></div><span class="report-view-chip">TIME CARD VIEW</span></div>
+      <div class="report-top"><div><span class="report-brand">GMS / GWD</span><h2>Employee Time Card Report</h2><p>Semi-monthly cutoff attendance time card.</p></div><span class="report-view-chip">${Number(result.from.slice(8, 10)) === 1 ? '1–15 CUTOFF' : '16–END CUTOFF'}</span></div>
       <div class="report-info-grid">
         <div><span>Employee</span><strong>${esc(record.fullName)}</strong></div>
         <div><span>Fingerprint ID</span><strong>${esc(record.fingerprintId ?? 'Not linked')}</strong></div>
         <div><span>Account Status</span><strong>Active</strong></div>
-        <div><span>Filtered Range</span><strong>${esc(formatDate(result.from))} – ${esc(formatDate(result.to))}</strong></div>
+        <div><span>Cutoff Range</span><strong>${esc(formatDate(result.from))} – ${esc(formatDate(result.to))}</strong></div>
         <div><span>Generated</span><strong>${esc(new Date().toLocaleString())}</strong></div>
         <div><span>Daily Target</span><strong>${Number(result.settings?.requiredPaidHours || 8)}h / day</strong></div>
       </div>
-      <div class="report-filter-note">Showing ${filteredCards.length} record(s) using the current Time Card filters.</div>
+      <div class="report-filter-note">Showing the complete ${esc(formatDate(result.from))} – ${esc(formatDate(result.to))} cutoff.</div>
       <div class="report-table-wrap"><table class="report-table"><thead><tr><th>Date</th><th>Day</th><th>Time In</th><th>Time Out</th><th>Work Hours</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No records match the current filters.</td></tr>'}</tbody></table></div>
     </div>`;
     if ($('modalCancel')) $('modalCancel').textContent = 'Close';
@@ -1686,7 +1789,7 @@
     }, true);
     $('modalPhoto')?.addEventListener('click', (event) => {
       event.preventDefault(); event.stopImmediatePropagation();
-      saveFullTimeCardPhoto();
+      saveFullTimeCardPortraitPhoto();
     }, true);
     $('modalBody')?.addEventListener('click', (event) => {
       const emergencyButton = event.target.closest('[data-emergency-type]');
@@ -1734,6 +1837,22 @@
     const branch = $('branchFilter')?.value;
     if (status && !status.startsWith('All')) params.set('status', status.toUpperCase().replaceAll(' ', '_'));
     if (branch && !branch.startsWith('All')) params.set('branch', branch);
+    return params;
+  }
+
+  function buildFullTimeCardParams(employeeId) {
+    const params = new URLSearchParams();
+    const selectedDate = $('dateRange')?.value || new Date().toLocaleDateString('en-CA');
+    const date = new Date(`${selectedDate}T00:00:00`);
+    const monthKey = selectedDate.slice(0, 7);
+    const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0).toLocaleDateString('en-CA');
+    const cutoff = $('cutoffFilter')?.value || (date.getDate() <= 15 ? '1 – 15' : '16 – End');
+    let from = `${monthKey}-01`;
+    let to = `${monthKey}-15`;
+    if (cutoff.includes('16') || (cutoff.toLowerCase().includes('full') && date.getDate() > 15)) { from = `${monthKey}-16`; to = monthEnd; }
+    params.set('employeeId', employeeId);
+    params.set('from', from);
+    params.set('to', to);
     return params;
   }
 
@@ -1879,6 +1998,8 @@
       <div class="functional-action-card"><i data-lucide="download"></i><div><strong>Download Database Backup</strong><small>Save employees, fingerprints, schedules, attendance and settings as JSON.</small></div><button id="downloadDatabaseBackup" type="button">Download Backup</button></div>
       <div class="functional-action-card"><i data-lucide="badge-check"></i><div><strong>Validate Server & Database</strong><small>Run a safe health check without changing any records.</small></div><button id="validateDatabase" type="button">Run Validation</button></div>
       <div class="functional-action-card"><i data-lucide="scroll-text"></i><div><strong>Review Attendance Logs</strong><small>Open the live log page to review saved scanner records.</small></div><button id="reviewDatabaseLogs" type="button">View Logs</button></div>
+      <div class="functional-action-card"><i data-lucide="trash-2"></i><div><strong>Clear Attendance Logs</strong><small>Permanently remove all attendance logs after administrator password verification.</small></div><button class="danger" id="clearAttendanceLogs" type="button">Clear Logs</button></div>
+      <div class="functional-action-card"><i data-lucide="file-pen-line"></i><div><strong>Edit Attendance</strong><small>Add a protected Time In or Time Out correction to an employee record.</small></div><button id="editAttendanceSecret" type="button">Edit Attendance</button></div>
       <div class="functional-action-card"><i data-lucide="refresh-cw"></i><div><strong>Reload Live Settings</strong><small>Discard unsaved fields and fetch the latest server values.</small></div><button id="reloadLiveSettings" type="button">Reload</button></div>
     </div><p class="functional-safety-note"><i data-lucide="shield-check"></i> PostgreSQL restore requires explicit validation and the server-side <code>-Apply</code> switch.</p></article>`;
     bindFunctionalSettingsControls();
@@ -1952,7 +2073,205 @@
     $('downloadDatabaseBackup')?.addEventListener('click', () => { location.href = '/api/export/db'; });
     $('validateDatabase')?.addEventListener('click', () => refreshSettingsHealth().then(() => toast('Server and database validation passed.')).catch((error) => toast(error.message)));
     $('reviewDatabaseLogs')?.addEventListener('click', () => { location.href = '/logs'; });
+    $('clearAttendanceLogs')?.addEventListener('click', clearAttendanceLogsFromSettings);
+    $('editAttendanceSecret')?.addEventListener('click', openAttendanceEditor);
     $('reloadLiveSettings')?.addEventListener('click', () => location.reload());
+  }
+
+  async function clearAttendanceLogsFromSettings() {
+    const host = document.createElement('div');
+    host.className = 'functional-secret-modal clear-logs-modal';
+    host.innerHTML = `<div class="functional-secret-dialog clear-logs-dialog" role="dialog" aria-modal="true" aria-labelledby="clearLogsTitle">
+      <button class="clear-logs-close" data-close-clear type="button" aria-label="Close">&times;</button>
+      <div class="clear-logs-icon"><i data-lucide="trash-2"></i></div>
+      <div class="clear-logs-copy"><span>Danger zone</span><h3 id="clearLogsTitle">Clear Attendance Logs</h3><p>This permanently deletes every saved Time In and Time Out record. Employee profiles and fingerprint registrations will remain.</p></div>
+      <form id="clearLogsForm" class="clear-logs-step">
+        <label for="clearLogsPassword">Administrator password</label>
+        <div class="clear-logs-password"><i data-lucide="lock-keyhole"></i><input id="clearLogsPassword" type="password" autocomplete="current-password" placeholder="Enter your password" required><button id="toggleClearLogsPassword" type="button">Show</button></div>
+        <p class="clear-logs-warning"><i data-lucide="triangle-alert"></i><span><strong>This action cannot be undone.</strong> Download a database backup first if these records may still be needed.</span></p>
+        <p class="clear-logs-error" id="clearLogsError" aria-live="polite"></p>
+        <div class="clear-logs-actions"><button class="settings-action secondary" data-close-clear type="button">Cancel</button><button class="settings-action danger confirm-clear" type="submit"><span>Continue</span><i data-lucide="arrow-right"></i></button></div>
+      </form>
+      <section class="clear-logs-step clear-logs-final" id="clearLogsFinal" hidden>
+        <div class="clear-logs-final-icon"><i data-lucide="shield-alert"></i></div>
+        <h4>Confirm permanent deletion</h4>
+        <p>You are about to permanently remove all attendance logs. Double-check that this is the action you intended.</p>
+        <label class="clear-logs-check"><input id="clearLogsAcknowledge" type="checkbox"><span>I understand that deleted attendance logs cannot be recovered.</span></label>
+        <p class="clear-logs-error" id="clearLogsFinalError" aria-live="polite"></p>
+        <div class="clear-logs-actions"><button class="settings-action secondary" id="backToClearPassword" type="button"><i data-lucide="arrow-left"></i> Back</button><button class="settings-action danger confirm-clear" id="finalClearLogs" type="button" disabled><i data-lucide="trash-2"></i><span>Yes, Clear All Logs</span></button></div>
+      </section>
+    </div>`;
+    document.body.appendChild(host);
+    const passwordInput = host.querySelector('#clearLogsPassword');
+    const close = () => host.remove();
+    host.addEventListener('click', (event) => { if (event.target === host || event.target.closest('[data-close-clear]')) close(); });
+    host.querySelector('#toggleClearLogsPassword').addEventListener('click', (event) => {
+      const show = passwordInput.type === 'password';
+      passwordInput.type = show ? 'text' : 'password';
+      event.currentTarget.textContent = show ? 'Hide' : 'Show';
+      passwordInput.focus();
+    });
+    const form = host.querySelector('form');
+    const finalStep = host.querySelector('#clearLogsFinal');
+    const acknowledge = host.querySelector('#clearLogsAcknowledge');
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const errorText = host.querySelector('#clearLogsError');
+      errorText.textContent = '';
+      if (!passwordInput.value) { errorText.textContent = 'Administrator password is required.'; passwordInput.focus(); return; }
+      form.hidden = true;
+      finalStep.hidden = false;
+      acknowledge.focus();
+    });
+    host.querySelector('#backToClearPassword').addEventListener('click', () => {
+      finalStep.hidden = true;
+      form.hidden = false;
+      acknowledge.checked = false;
+      host.querySelector('#finalClearLogs').disabled = true;
+      passwordInput.focus();
+    });
+    acknowledge.addEventListener('change', () => { host.querySelector('#finalClearLogs').disabled = !acknowledge.checked; });
+    host.querySelector('#finalClearLogs').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      const errorText = host.querySelector('#clearLogsFinalError');
+      errorText.textContent = '';
+      button.disabled = true;
+      button.querySelector('span').textContent = 'Clearing...';
+      try {
+        const result = await api('/api/admin/clear-attendance', { method: 'POST', body: JSON.stringify({ password: passwordInput.value }) });
+        close();
+        toast(`${Number(result.deleted || 0)} attendance log${Number(result.deleted || 0) === 1 ? '' : 's'} cleared.`);
+      } catch (error) {
+        errorText.textContent = error.message;
+        button.disabled = false;
+        button.querySelector('span').textContent = 'Yes, Clear All Logs';
+      }
+    });
+    window.lucide?.createIcons();
+    setTimeout(() => passwordInput.focus(), 50);
+  }
+
+  async function openAttendanceEditor() {
+    try {
+      const [{ employees }, { attendance }] = await Promise.all([api('/api/employees'), api('/api/attendance?limit=500')]);
+      const active = employees.filter((employee) => employee.active !== false);
+      if (!active.length) return toast('Create an active employee first.');
+      const records = attendance.filter((record) => record.employeeId && ['TIME_IN', 'TIME_OUT'].includes(String(record.attendanceType || record.type || '').toUpperCase()));
+      const host = document.createElement('div');
+      host.className = 'functional-secret-modal attendance-editor-modal';
+      host.innerHTML = `<div class="attendance-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="attendanceEditorTitle">
+        <header class="attendance-editor-head"><div><span>Protected workspace</span><h3 id="attendanceEditorTitle">Edit Attendance</h3><p>Select an employee, review every saved scan, then edit the exact Time In or Time Out record.</p></div><button data-close-editor type="button"><i data-lucide="x"></i> Close</button></header>
+        <div class="attendance-editor-layout">
+          <aside class="attendance-employee-pane"><div class="attendance-pane-title"><strong>Employees</strong><span>${active.length}</span></div><label class="attendance-employee-search"><i data-lucide="search"></i><input id="attendanceEmployeeSearch" type="search" placeholder="Search employee" autocomplete="off"></label><div id="attendanceEmployeeList"></div></aside>
+          <main class="attendance-record-pane"><div id="attendanceEditorEmployee"></div><div class="attendance-record-toolbar"><strong>Attendance records</strong><div class="attendance-record-toolbar-controls"><label for="attendanceMonth">Month</label><input id="attendanceMonth" type="month"><span id="attendanceRecordCount"></span></div></div><div id="attendanceRecordList"></div></main>
+        </div>
+      </div>`;
+      document.body.appendChild(host);
+      const close = () => host.remove();
+      host.addEventListener('click', (event) => { if (event.target === host || event.target.closest('[data-close-editor]')) close(); });
+      let selectedEmployeeId = active[0].id;
+      const now = new Date();
+      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      let selectedMonth = todayKey.slice(0, 7);
+      host.querySelector('#attendanceMonth').value = selectedMonth;
+      host.querySelector('#attendanceMonth').max = selectedMonth;
+      const employeeRecords = (employeeId) => records.filter((record) => record.employeeId === employeeId).sort((a, b) => new Date(b.scannedAt) - new Date(a.scannedAt));
+      const recordStatus = (record) => {
+        if (record.accepted === false || record.reviewStatus === 'CORRECTION_REQUESTED') return ['Pending', 'pending'];
+        const type = String(record.attendanceType || record.type || '').toUpperCase();
+        const punctuality = String(record.punctuality || record.statusText || '').toUpperCase();
+        if (type === 'TIME_IN' && (Number(record.lateMinutes) > 0 || punctuality.includes('LATE'))) return [`Late${record.lateMinutes ? ` ${record.lateMinutes}m` : ''}`, 'late'];
+        if (type === 'TIME_IN') return ['On Time', 'on-time'];
+        if (Number(record.earlyOutMinutes) > 0 || punctuality.includes('EARLY')) return [`Early Out${record.earlyOutMinutes ? ` ${record.earlyOutMinutes}m` : ''}`, 'early-out'];
+        if (punctuality.includes('SHORT')) return ['Short Hours', 'short'];
+        if (punctuality.includes('OVERTIME')) return ['Overtime', 'overtime'];
+        return ['Completed', 'completed'];
+      };
+      const localValue = (iso) => { const date = new Date(iso); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+      const dailyRows = (employeeId, monthKey) => {
+        const grouped = new Map();
+        employeeRecords(employeeId).slice().reverse().forEach((record) => {
+          const dateKey = localValue(record.scannedAt).slice(0, 10);
+          if (!dateKey.startsWith(`${monthKey}-`)) return;
+          const day = grouped.get(dateKey) || { dateKey, timeIn: null, timeOut: null };
+          const type = String(record.attendanceType || record.type || '').toUpperCase();
+          if (type === 'TIME_IN' && !day.timeIn) day.timeIn = record;
+          if (type === 'TIME_OUT') day.timeOut = record;
+          grouped.set(dateKey, day);
+        });
+        const [year, month] = monthKey.split('-').map(Number);
+        const earliest = new Date(year, month - 1, 1, 12, 0, 0, 0);
+        const latest = new Date(year, month, 0, 12, 0, 0, 0);
+        const today = new Date(); today.setHours(12, 0, 0, 0);
+        if (latest > today) latest.setTime(today.getTime());
+        const employee = active.find((item) => item.id === employeeId);
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        for (let cursor = new Date(earliest); cursor <= latest; cursor.setDate(cursor.getDate() + 1)) {
+          const dateKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+          const schedule = employee?.weeklySchedule?.[dayNames[cursor.getDay()]];
+          const day = grouped.get(dateKey) || { dateKey, timeIn: null, timeOut: null };
+          day.dayOff = schedule?.dayOff === true;
+          grouped.set(dateKey, day);
+        }
+        return [...grouped.values()].sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+      };
+      const dayStatus = (day) => {
+        if (day.dayOff && !day.timeIn && !day.timeOut) return ['Day Off', 'day-off'];
+        if (!day.timeIn && !day.timeOut) return ['Absent', 'absent'];
+        if (!day.timeIn || !day.timeOut || day.timeIn.accepted === false || day.timeOut.accepted === false) return ['Pending', 'pending'];
+        const inStatus = recordStatus(day.timeIn); const outStatus = recordStatus(day.timeOut);
+        if (inStatus[1] === 'late' && outStatus[1] === 'early-out') return [`${inStatus[0]} / ${outStatus[0]}`, 'early-out'];
+        if (outStatus[1] === 'early-out' || outStatus[1] === 'short') return outStatus;
+        if (inStatus[1] === 'late') return inStatus;
+        if (outStatus[1] === 'overtime') return outStatus;
+        return ['On Time / Completed', 'completed'];
+      };
+      const renderEmployees = () => {
+        const query = host.querySelector('#attendanceEmployeeSearch').value.trim().toLowerCase();
+        host.querySelector('#attendanceEmployeeList').innerHTML = active.filter((employee) => !query || `${employee.fullName} ${employee.employeeCode || ''}`.toLowerCase().includes(query)).map((employee) => {
+          const count = employeeRecords(employee.id).length;
+          return `<button class="attendance-employee-item ${employee.id === selectedEmployeeId ? 'active' : ''}" data-attendance-employee="${esc(employee.id)}"><span class="attendance-editor-avatar">${employeeAvatar(employee)}</span><span><strong>${esc(employee.fullName)}</strong><small>${esc(employee.employeeCode || employee.department || 'Employee')}</small></span><b>${count}</b></button>`;
+        }).join('') || '<p class="attendance-editor-empty">No employee found.</p>';
+      };
+      const renderRecords = () => {
+        const employee = active.find((item) => item.id === selectedEmployeeId);
+        const scans = employeeRecords(selectedEmployeeId).filter((record) => localValue(record.scannedAt).startsWith(selectedMonth));
+        const rows = dailyRows(selectedEmployeeId, selectedMonth);
+        host.querySelector('#attendanceEditorEmployee').innerHTML = `<div class="attendance-selected-person"><span class="attendance-editor-avatar">${employeeAvatar(employee)}</span><div><strong>${esc(employee.fullName)}</strong><small>${esc(employee.employeeCode || '')}${employee.department ? ` &bull; ${esc(employee.department)}` : ''}</small></div></div>`;
+        host.querySelector('#attendanceRecordCount').textContent = `${rows.length} day${rows.length === 1 ? '' : 's'} · ${scans.length} saved scans`;
+        host.querySelector('#attendanceRecordList').innerHTML = rows.length ? `<div class="attendance-record-columns"><span>Date</span><span>Time In</span><span>Time Out</span><span>Status</span><span>Password</span><span>Action</span></div>${rows.map((day) => {
+          const status = dayStatus(day); const date = new Date(`${day.dateKey}T12:00:00`);
+          return `<form class="attendance-record-row" data-date-key="${day.dateKey}" data-employee-id="${esc(employee.id)}" data-time-in-id="${esc(day.timeIn?.id || '')}" data-time-out-id="${esc(day.timeOut?.id || '')}"><div class="attendance-record-date"><strong>${esc(date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }))}</strong><small>${esc(date.toLocaleDateString(undefined, { weekday: 'long' }))}</small></div><label><span>Time In</span><input name="timeIn" type="time" value="${day.timeIn ? localValue(day.timeIn.scannedAt).slice(11, 16) : ''}" placeholder="Add Time In"></label><label><span>Time Out</span><input name="timeOut" type="time" value="${day.timeOut ? localValue(day.timeOut.scannedAt).slice(11, 16) : ''}" placeholder="Add Time Out"></label><span class="attendance-auto-status ${status[1]}">${esc(status[0])}</span><label class="attendance-edit-password"><span>Password</span><input name="password" type="password" placeholder="Required to edit" required></label><button type="submit"><i data-lucide="save"></i> Save</button><p class="attendance-row-message" aria-live="polite"></p></form>`;
+        }).join('')}` : '<div class="attendance-editor-empty large"><i data-lucide="calendar-x"></i><strong>No attendance records</strong><span>This employee has no saved Time In or Time Out scans.</span></div>';
+        window.lucide?.createIcons();
+      };
+      host.querySelector('#attendanceEmployeeSearch').addEventListener('input', renderEmployees);
+      host.querySelector('#attendanceMonth').addEventListener('change', (event) => { selectedMonth = event.target.value || todayKey.slice(0, 7); renderRecords(); });
+      host.querySelector('#attendanceEmployeeList').addEventListener('click', (event) => { const button = event.target.closest('[data-attendance-employee]'); if (!button) return; selectedEmployeeId = button.dataset.attendanceEmployee; renderEmployees(); renderRecords(); });
+      host.querySelector('#attendanceRecordList').addEventListener('submit', async (event) => {
+        const form = event.target.closest('.attendance-record-row'); if (!form) return; event.preventDefault();
+        const button = event.submitter; const message = form.querySelector('.attendance-row-message');
+        const edits = [{ id: form.dataset.timeInId, field: 'timeIn', type: 'TIME_IN' }, { id: form.dataset.timeOutId, field: 'timeOut', type: 'TIME_OUT' }];
+        button.disabled = true; message.textContent = 'Saving correction...'; message.className = 'attendance-row-message';
+        try {
+          for (const edit of edits) {
+            const record = records.find((item) => item.id === edit.id); const input = form.elements[edit.field];
+            if (!input?.value || (record && localValue(record.scannedAt).slice(11, 16) === input.value)) continue;
+            const correctedDate = new Date(`${form.dataset.dateKey}T${input.value}:00`);
+            if (record) {
+              const result = await api(`/api/admin/attendance/${encodeURIComponent(record.id)}`, { method: 'PATCH', body: JSON.stringify({ attendanceType: edit.type, scannedAt: correctedDate.toISOString(), password: form.elements.password.value, reason: 'Attendance correction' }) });
+              Object.assign(record, result.attendance);
+            } else {
+              await api('/api/admin/emergency-attendance', { method: 'POST', body: JSON.stringify({ employeeId: form.dataset.employeeId, attendanceType: edit.type, scannedAt: correctedDate.toISOString(), password: form.elements.password.value, reason: 'Attendance correction', approvedBy: 'Administrator' }) });
+            }
+          }
+          const refreshed = await api('/api/attendance?limit=500'); records.splice(0, records.length, ...refreshed.attendance.filter((record) => record.employeeId));
+          form.elements.password.value = ''; renderEmployees(); renderRecords(); toast('Daily attendance updated and status recalculated.');
+        } catch (error) { message.textContent = error.message; message.className = 'attendance-row-message error'; button.disabled = false; }
+      });
+      renderEmployees(); renderRecords();
+      window.lucide?.createIcons();
+    } catch (error) { toast(error.message); }
   }
 
   async function saveSettings(event) {

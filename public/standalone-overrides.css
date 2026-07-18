@@ -7,6 +7,191 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   outline-offset: 2px !important;
 }
 
+/* Search controls already have a styled outer container. Avoid the doubled
+   inner rectangle produced by the global focus-visible rule. */
+input[type="search"],
+input[type="search"]:focus,
+input[type="search"]:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+}
+
+label:has(> input[type="search"]),
+.search-box,
+.search-wrapper,
+.search-container,
+.accounts-search,
+.attendance-employee-search {
+  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+label:has(> input[type="search"]):hover,
+.search-box:hover,
+.search-wrapper:hover,
+.search-container:hover,
+.accounts-search:hover,
+.attendance-employee-search:hover {
+  border-color: #9fcfc3 !important;
+  background-color: #fff !important;
+}
+
+label:has(> input[type="search"]):focus-within,
+.search-box:focus-within,
+.search-wrapper:focus-within,
+.search-container:focus-within,
+.accounts-search:focus-within,
+.attendance-employee-search:focus-within {
+  border-color: #5fb7a3 !important;
+  box-shadow: 0 0 0 3px rgba(8, 133, 112, .09) !important;
+}
+
+/* Attendance Edit: keep one clean search border, never an inner focus box. */
+.attendance-employee-search,
+.attendance-employee-search:hover,
+.attendance-employee-search:focus-within {
+  min-height: 46px !important;
+  border: 1px solid #c7d8e5 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.attendance-employee-search:focus-within {
+  border-color: #78bcae !important;
+}
+
+#attendanceEmployeeSearch,
+#attendanceEmployeeSearch:hover,
+#attendanceEmployeeSearch:focus,
+#attendanceEmployeeSearch:focus-visible {
+  min-height: 44px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  appearance: none;
+}
+
+#attendanceEmployeeSearch::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+/* Edit Attendance readability: this workspace is used for record review, so
+   keep every label and value comfortably readable instead of micro-sized. */
+.attendance-editor-head > div > span { font-size: 12px !important; }
+.attendance-editor-head h3 { font-size: 28px !important; font-weight: 850 !important; }
+.attendance-editor-head p { font-size: 14px !important; line-height: 1.5 !important; }
+.attendance-editor-head > button { min-height: 46px !important; padding-inline: 17px !important; font-size: 13px !important; }
+.attendance-editor-layout { grid-template-columns: 360px minmax(0, 1fr) !important; }
+.attendance-pane-title { font-size: 16px !important; font-weight: 850 !important; }
+.attendance-pane-title span { min-width: 31px !important; font-size: 12px !important; font-weight: 850 !important; }
+.attendance-employee-search svg { width: 18px !important; height: 18px !important; }
+#attendanceEmployeeSearch { font-size: 15px !important; font-weight: 750 !important; }
+.attendance-employee-item { min-height: 64px !important; padding: 11px 12px !important; grid-template-columns: 46px minmax(0, 1fr) auto !important; }
+.attendance-employee-item .attendance-editor-avatar { width: 46px !important; height: 46px !important; font-size: 13px !important; }
+.attendance-employee-item strong { font-size: 15px !important; font-weight: 850 !important; }
+.attendance-employee-item small { font-size: 12px !important; font-weight: 650 !important; }
+.attendance-employee-item b { min-width: 29px !important; padding: 5px 8px !important; font-size: 12px !important; }
+.attendance-selected-person .attendance-editor-avatar { width: 52px !important; height: 52px !important; }
+.attendance-selected-person strong { font-size: 18px !important; font-weight: 850 !important; }
+.attendance-selected-person small { font-size: 13px !important; }
+.attendance-record-toolbar { font-size: 15px !important; font-weight: 800 !important; }
+.attendance-record-toolbar span { font-size: 13px !important; }
+.attendance-record-toolbar { position: sticky; z-index: 8; top: -22px; align-items: center !important; gap: 16px !important; padding: 14px 0 12px !important; background: #f8fbfd; box-shadow: 0 1px #e1e8ef; }
+.attendance-record-toolbar-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.attendance-record-toolbar-controls label { color: #63748a; font-size: 13px; font-weight: 800; }
+#attendanceMonth { width: 170px; min-height: 42px !important; padding: 0 11px; border: 1px solid #bfcfdd; border-radius: 9px; outline: 0; color: #193653; background: #fff; box-shadow: none !important; font-size: 14px !important; font-weight: 800 !important; cursor: pointer; }
+#attendanceMonth:hover { border-color: #78bcae; }
+#attendanceMonth:focus { border-color: #5ba995; box-shadow: 0 0 0 3px rgba(8, 133, 112, .09) !important; }
+#attendanceRecordCount { min-width: 145px; color: #63748a !important; text-align: right; }
+.attendance-record-columns { font-size: 11px !important; }
+.attendance-record-date strong { font-size: 14px !important; }
+.attendance-record-date small { font-size: 12px !important; }
+.attendance-type,
+.attendance-auto-status { padding: 8px 10px !important; font-size: 12px !important; }
+.attendance-record-row label > span { font-size: 12px !important; }
+.attendance-record-row input { min-height: 45px !important; font-size: 14px !important; font-weight: 700 !important; }
+.attendance-record-row > button { min-height: 45px !important; font-size: 13px !important; }
+.attendance-row-message { font-size: 12px !important; }
+.attendance-editor-empty { font-size: 14px !important; }
+
+@media (max-width: 1100px) {
+  .attendance-editor-layout { grid-template-columns: 280px minmax(0, 1fr) !important; }
+}
+
+@media (max-width: 680px) {
+  .attendance-editor-layout { display: block !important; }
+  .attendance-editor-head h3 { font-size: 24px !important; }
+  .attendance-record-toolbar { align-items: flex-start !important; flex-direction: column !important; }
+  .attendance-record-toolbar-controls { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  #attendanceRecordCount { min-width: 0; text-align: left; }
+}
+
+/* Full Time Card: one complete semi-monthly cutoff visible at a glance. */
+.page-timecard .full-timecard-modal .modal {
+  width: min(1420px, calc(100vw - 18px)) !important;
+  max-height: calc(100dvh - 16px) !important;
+  border-radius: 16px !important;
+}
+.page-timecard .full-timecard-modal .modal-header { min-height: 48px !important; padding: 0 16px !important; }
+.page-timecard .full-timecard-modal .modal-header h3 { font-size: 15px !important; }
+.page-timecard .full-timecard-modal .modal-body { max-height: calc(100dvh - 106px) !important; }
+.page-timecard .full-timecard-modal .modal-footer { min-height: 50px; padding: 6px 14px !important; }
+.page-timecard .full-timecard-modal .modal-footer .button { min-height: 38px !important; }
+.page-timecard .timecard-report { padding: 14px 16px 16px !important; border-top-width: 4px !important; }
+.page-timecard .report-top { align-items: center !important; margin-bottom: 10px !important; }
+.page-timecard .report-brand { font-size: 10px !important; }
+.page-timecard .report-top h2 { margin: 3px 0 1px !important; font-size: 21px !important; }
+.page-timecard .report-top p { margin: 0 !important; font-size: 11px !important; }
+.page-timecard .report-view-chip { padding: 7px 12px !important; font-size: 10px !important; }
+.page-timecard .report-info-grid { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; gap: 7px !important; margin-bottom: 9px !important; }
+.page-timecard .report-info-grid > div { min-height: 58px !important; padding: 8px 10px !important; border-radius: 10px !important; }
+.page-timecard .report-info-grid span { margin-bottom: 4px !important; font-size: 8px !important; }
+.page-timecard .report-info-grid strong { font-size: 12px !important; }
+.page-timecard .report-filter-note { margin-bottom: 6px !important; font-size: 10px !important; }
+.page-timecard .report-table-wrap { overflow: visible !important; border-radius: 10px !important; }
+.page-timecard .report-table th { padding: 7px 8px !important; font-size: 9px !important; }
+.page-timecard .report-table td { height: 32px; padding: 5px 8px !important; font-size: 10px !important; }
+.page-timecard .report-status { min-width: 82px !important; padding: 4px 8px !important; font-size: 9px !important; }
+.page-timecard .report-status.worked-day-off { color: #895100; border-color: #f3c66a; background: #fff6dc; }
+
+@media (max-width: 1100px) {
+  .page-timecard .report-info-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+
+/* Stronger, easier-to-read navigation highlights across every admin page. */
+.nav-item,
+.nav-link,
+.shared-nav-item {
+  min-height: 47px !important;
+  padding-inline: 15px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease !important;
+}
+
+.nav-item:hover,
+.nav-link:hover,
+.shared-nav-item:hover:not(.active) {
+  transform: translateX(3px) !important;
+  border-color: #d4e9e3 !important;
+  background: #f1faf7 !important;
+  box-shadow: 0 5px 14px rgba(7, 92, 79, .07) !important;
+}
+
+.nav-item.active,
+.nav-link.active,
+.shared-nav-item.active {
+  border-color: #9fd8ca !important;
+  background: linear-gradient(90deg, #dff6ef, #edf9f6) !important;
+  box-shadow: inset 4px 0 #087a68, 0 6px 16px rgba(7, 92, 79, .09) !important;
+  font-weight: 850 !important;
+}
+
 .account-bind-box { padding: 13px; display: grid; gap: 9px; border: 1px solid #d8e4ee; border-radius: 11px; background: #f8fbfd; }
 .account-bind-box > div:first-child { display: grid; gap: 3px; }
 .account-bind-provider { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding-top: 9px; border-top: 1px solid #e4ebf2; }

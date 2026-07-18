@@ -81,7 +81,9 @@ test('settings clamp unsafe operational values', () => {
 test('only authentication entry points are public', () => {
   assert.equal(isPublicApi('/api/auth/login', 'POST'), true);
   assert.equal(isPublicApi('/api/auth/password-reset-request', 'POST'), true);
+  assert.equal(isPublicApi('/api/auth/password-reset', 'POST'), true);
   assert.equal(isPublicApi('/api/auth/firebase', 'POST'), true);
+  assert.equal(isPublicApi('/api/auth/firebase-config', 'GET'), true);
   assert.equal(isPublicApi('/api/auth/oauth/google', 'GET'), true);
   assert.equal(isPublicApi('/api/auth/oauth/facebook/callback', 'GET'), true);
   assert.equal(isPublicApi('/api/employees', 'GET'), false);
