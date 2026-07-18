@@ -716,25 +716,26 @@ button.primary {
 .page-employees .live-view-visible { display: block !important; }
 .page-employees .live-view-hidden { display: none !important; }
 .page-employees #employeeModal { overflow-y: auto !important; padding: 18px 0 !important; box-sizing: border-box !important; }
-.page-employees #employeeModal .modal { width: min(980px, calc(100vw - 28px)) !important; max-height: none !important; margin: auto !important; overflow: visible !important; border-radius: 16px !important; }
-.page-employees #employeeModal .modal-body { max-height: none !important; padding: 14px 16px !important; overflow: visible !important; background: #f7f9fc !important; }
+.page-employees #employeeModal .modal { width: min(900px, calc(100vw - 28px)) !important; max-height: calc(100dvh - 36px) !important; margin: auto !important; overflow: hidden !important; border-radius: 16px !important; }
+.page-employees #employeeModal .modal-body { max-height: calc(100dvh - 154px) !important; padding: 16px 18px !important; overflow-y: auto !important; background: #f7f9fc !important; }
 .page-employees #employeeModal .employee-form { display: block !important; }
-.page-employees .employee-modal-fields { display: grid; grid-template-columns: minmax(280px, .78fr) minmax(460px, 1.22fr); align-items: start; gap: 10px 14px; }
+.page-employees .employee-modal-fields { display: grid; grid-template-columns: minmax(310px, .82fr) minmax(420px, 1.18fr); align-items: start; gap: 12px 18px; }
 .page-employees .employee-edit-profile {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 12px;
-  text-align: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 13px 14px;
+  text-align: left;
   border: 1px solid #c9ded8;
   border-radius: 10px;
   background: linear-gradient(135deg, #f1fffa, #f7fbff);
 }
 .page-employees .employee-edit-avatar {
-  width: 74px;
-  height: 74px;
+  width: 62px;
+  height: 62px;
+  flex: 0 0 62px;
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -747,10 +748,10 @@ button.primary {
   font-weight: 800;
 }
 .page-employees .employee-edit-avatar img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center top; border-radius: 50%; }
-.page-employees .employee-edit-profile-copy { min-width: 0; display: grid; justify-items: center; gap: 4px; }
+.page-employees .employee-edit-profile-copy { min-width: 0; display: grid; justify-items: start; gap: 4px; }
 .page-employees .employee-edit-profile-copy strong { overflow: hidden; color: #102648; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .page-employees .employee-edit-profile-copy span { color: #687891; font-size: 11px; font-weight: 650; }
-.page-employees .employee-edit-account-state { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 10px; border: 1px solid; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.page-employees .employee-edit-account-state { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 10px; border: 1px solid; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
 .page-employees .employee-edit-account-state i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px currentColor inset; }
 .page-employees .employee-edit-account-state.active { color: #08715f; border-color: #9ee4ce; background: #eafff7; }
 .page-employees .employee-edit-account-state.inactive { color: #d93445; border-color: #ffc4ca; background: #fff0f2; }
@@ -775,13 +776,14 @@ button.primary {
 .page-employees .employee-photo-field > small { display: block; margin-top: 5px; color: #7a8799; font-size: 9px; line-height: 1.35; }
 .page-employees .employee-fingerprint-box { display: grid; grid-template-columns: 1fr; align-items: end; gap: 8px; padding: 11px; border: 1px solid #bfe5dc; border-radius: 10px; background: #effaf7; }
 .page-employees .employee-fingerprint-box strong { color: #08715f; font-size: 13px; }
-.page-employees .employee-fingerprint-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; padding: 7px; border: 1px dashed #abd8cc; border-radius: 8px; background: rgba(255,255,255,.74); }
-.page-employees .employee-fingerprint-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 27px; padding: 0 8px; border: 1px solid #c8d8e6; border-radius: 999px; color: #38506d; background: #f5f8fc; font-size: 10px; font-weight: 800; }
+.page-employees .employee-fingerprint-list { display: grid; gap: 6px; min-height: 42px; padding: 7px; border: 1px dashed #abd8cc; border-radius: 8px; background: rgba(255,255,255,.74); }
+.page-employees .employee-fingerprint-chip { width: 100%; min-width: 0; min-height: 38px; padding: 5px 6px 5px 10px; display: flex; align-items: center; gap: 7px; border: 1px solid #c8d8e6; border-radius: 9px; color: #38506d; background: #f5f8fc; font-size: 10px; font-weight: 800; box-sizing: border-box; }
+.page-employees .employee-fingerprint-chip b { color: #18314f; font-size: 11px; white-space: nowrap; }
 .page-employees .employee-fingerprint-chip svg { width: 13px; height: 13px; }
 .page-employees .employee-fingerprint-chip.primary { color: #08715f; border-color: #9ee4ce; background: #eafff7; }
 .page-employees .employee-fingerprint-chip.new { color: #1768c5; border-color: #b8d7ff; background: #edf6ff; }
 .page-employees .employee-fingerprint-chip small { padding-left: 5px; border-left: 1px solid currentColor; font-size: 8px; opacity: .78; text-transform: uppercase; }
-.page-employees .employee-fingerprint-chip button { width: 21px; height: 21px; margin-left: 2px; padding: 0; display: inline-grid; place-items: center; border: 0; border-radius: 50%; color: #b42334; background: #fff0f2; cursor: pointer; }
+.page-employees .employee-fingerprint-chip button { width: auto; min-height: 28px; margin-left: auto; padding: 0 9px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #ffc8ce; border-radius: 7px; color: #b42334; background: #fff5f6; font-size: 10px; font-weight: 850; white-space: nowrap; cursor: pointer; }
 .page-employees .employee-fingerprint-chip button:hover { color: #fff; background: #d73749; }
 .page-employees .employee-fingerprint-chip button:disabled { opacity: .55; cursor: wait; }
 .page-employees .employee-fingerprint-chip button svg { width: 12px; height: 12px; }
@@ -793,7 +795,7 @@ button.primary {
 .page-employees .employee-weekly-schedule { padding: 12px; border: 1px solid #dce5ef; border-radius: 10px; background: #fff; }
 .page-employees .employee-weekly-schedule h4 { margin: 0 0 10px; color: #142746; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 .page-employees .employee-weekly-schedule > p { margin: 10px 0 0; color: #77859a; font-size: 10px; }
-.page-employees .employee-schedule-row { display: grid; grid-template-columns: 86px 90px 1fr 1fr; align-items: center; gap: 7px; min-height: 42px; border-top: 1px solid #edf1f6; }
+.page-employees .employee-schedule-row { display: grid; grid-template-columns: 76px 82px 1fr 1fr; align-items: center; gap: 7px; min-height: 42px; border-top: 1px solid #edf1f6; }
 .page-employees .employee-schedule-row:first-of-type { border-top: 0; }
 .page-employees .employee-schedule-row strong { color: #30415d; font-size: 11px; }
 .page-employees .employee-schedule-row input[type="time"] { width: 100%; min-height: 36px; padding: 0 8px; border: 1px solid #d6e0eb; border-radius: 9px; color: #253754; background: #f9fbfd; box-sizing: border-box; }
@@ -837,7 +839,8 @@ button.primary {
 .assignment-primary { color: #fff; border: 1px solid #06715f; background: #07866f; }
 .assignment-secondary { color: #1768c5; border: 1px solid #b8d7ff; background: #edf6ff; }
 .enrollment-assignment-divider { height: 28px; display: flex; align-items: center; justify-content: center; color: #8a98aa; font-size: 11px; text-transform: uppercase; }
-.employee-pending-link { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 9px; padding-top: 9px; border-top: 1px solid #cfe7df; }
+.employee-pending-link { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; gap: 7px; padding-top: 9px; border-top: 1px solid #cfe7df; }
+.employee-pending-link button { min-height: 40px; border: 1px solid #b9d6ec; border-radius: 8px; color: #1768a8; background: #f1f8ff; font-weight: 800; }
 .employee-pending-link[hidden] { display: none !important; }
 .employee-pending-link select { min-width: 0; }
 .employee-pending-link button { white-space: nowrap; }
