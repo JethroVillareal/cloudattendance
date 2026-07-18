@@ -751,7 +751,7 @@
       <label><span>Full Name</span><input id="newFullName" type="text" placeholder="e.g. Juan Dela Cruz" value="${esc(employee?.fullName || '')}" required></label>
       <section class="employee-fingerprint-box">
         <div><span>Fingerprints</span><strong id="employeeFingerprintStatus">${linkedFingerprints.length ? `${linkedFingerprints.length} linked finger${linkedFingerprints.length === 1 ? '' : 's'}` : 'No fingerprint linked'}</strong></div>
-        <div class="employee-fingerprint-list" id="employeeFingerprintList">${linkedFingerprints.length ? linkedFingerprints.map((id, index) => `<span class="employee-fingerprint-chip ${index === 0 ? 'primary' : ''}"><i data-lucide="fingerprint"></i>ID ${id}${index === 0 ? '<small>Primary</small>' : ''}</span>`).join('') : '<span class="employee-fingerprint-empty">Scan a finger to add it here.</span>'}</div>
+        <div class="employee-fingerprint-list" id="employeeFingerprintList">${linkedFingerprints.length ? linkedFingerprints.map((id, index) => `<span class="employee-fingerprint-chip ${index === 0 ? 'primary' : ''}"><i data-lucide="fingerprint"></i>ID ${id}${index === 0 ? '<small>Primary</small>' : ''}<button type="button" data-remove-fingerprint="${id}" aria-label="Remove fingerprint ID ${id}" title="Remove fingerprint only"><i data-lucide="x"></i></button></span>`).join('') : '<span class="employee-fingerprint-empty">Scan a finger to add it here.</span>'}</div>
         <select id="employeeScanDevice">${onlineReaders.length ? onlineReaders.map((reader) => `<option value="${esc(reader.deviceId)}">${esc(reader.deviceId)} — Online</option>`).join('') : '<option value="">No online ESP32-S3</option>'}</select>
         <button id="scanEmployeeFingerprint" type="button" ${onlineReaders.length ? '' : 'disabled'}><i data-lucide="plus"></i> Add Another Fingerprint</button>
         <div class="employee-pending-link" ${liveEmployeePendingFingerprints.length ? '' : 'hidden'}>
@@ -773,7 +773,7 @@
     const allIds = Array.from(new Set([...existing, ...employeeStagedFingerprints]));
     if ($('employeeFingerprintStatus')) $('employeeFingerprintStatus').textContent = allIds.length ? `${allIds.length} linked finger${allIds.length === 1 ? '' : 's'}` : 'No fingerprint linked';
     if ($('employeeFingerprintList')) $('employeeFingerprintList').innerHTML = allIds.length
-      ? allIds.map((id, index) => `<span class="employee-fingerprint-chip ${index === 0 ? 'primary' : ''} ${employeeStagedFingerprints.includes(id) ? 'new' : ''}"><i data-lucide="fingerprint"></i>ID ${id}${index === 0 ? '<small>Primary</small>' : ''}${employeeStagedFingerprints.includes(id) ? '<small>New</small>' : ''}</span>`).join('')
+      ? allIds.map((id, index) => `<span class="employee-fingerprint-chip ${index === 0 ? 'primary' : ''} ${employeeStagedFingerprints.includes(id) ? 'new' : ''}"><i data-lucide="fingerprint"></i>ID ${id}${index === 0 ? '<small>Primary</small>' : ''}${employeeStagedFingerprints.includes(id) ? '<small>New</small>' : ''}<button type="button" data-remove-fingerprint="${id}" aria-label="Remove fingerprint ID ${id}" title="Remove fingerprint only"><i data-lucide="x"></i></button></span>`).join('')
       : '<span class="employee-fingerprint-empty">Scan a finger to add it here.</span>';
     window.lucide?.createIcons();
   }
@@ -955,6 +955,14 @@
     if (page.dataset.liveEmployeeEditing) return;
     page.dataset.liveEmployeeEditing = 'true';
     page.addEventListener('click', (event) => {
+      const removeFingerprintButton = event.target.closest('[data-remove-fingerprint]');
+      if (removeFingerprintButton) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        removeEmployeeFingerprint(Number(removeFingerprintButton.dataset.removeFingerprint), removeFingerprintButton)
+          .catch((error) => toast(error.message));
+        return;
+      }
       if (event.target.closest('#scanEmployeeFingerprint')) {
         startEmployeeFingerprintScan(event).catch((error) => toast(error.message));
         return;
@@ -986,6 +994,28 @@
       setEmployeeModalMode();
     }, true);
     $('saveEmployeeButton')?.addEventListener('click', saveEmployee, true);
+  }
+
+  async function removeEmployeeFingerprint(fingerprintId, button) {
+    if (!Number.isInteger(fingerprintId) || fingerprintId < 1) return;
+    if (employeeStagedFingerprints.includes(fingerprintId)) {
+      employeeStagedFingerprints = employeeStagedFingerprints.filter((id) => id !== fingerprintId);
+      renderEmployeeFingerprintList();
+      toast(`Unsaved fingerprint ID ${fingerprintId} removed.`);
+      return;
+    }
+    if (!editingEmployeeId) return toast('Save the employee before removing a linked fingerprint.');
+    if (!window.confirm(`Remove fingerprint ID ${fingerprintId} only? The employee, account, schedule, and attendance history will remain.`)) return;
+    button.disabled = true;
+    try {
+      const result = await api(`/api/employees/${encodeURIComponent(editingEmployeeId)}/fingerprints/${encodeURIComponent(fingerprintId)}`, { method: 'DELETE' });
+      const index = liveEmployeeRecords.findIndex((employee) => employee.id === editingEmployeeId);
+      if (index >= 0 && result.employee) liveEmployeeRecords[index] = result.employee;
+      renderEmployeeFingerprintList();
+      toast(result.message || `Fingerprint ID ${fingerprintId} removed.`);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function bindEmployeeViewControls() {
