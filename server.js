@@ -3156,7 +3156,7 @@ async function handleRequest(req, res) {
   }
 
   try {
-    if (method === 'GET' && pathname === '/health') {
+    if (method === 'GET' && (pathname === '/health' || pathname === '/api/health')) {
       const storageStatus = storage.getStatus();
       const primaryFailed = ['unavailable', 'write_failed'].includes(storageStatus.postgresql);
       const fallbackFailed = storageStatus.activePrimary !== 'postgresql' && ['failed', 'invalid'].includes(storageStatus.sqliteBackup);
