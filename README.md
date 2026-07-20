@@ -54,19 +54,78 @@ The command backs up the previous SQLite file before replacing its records.
 The live Node.js/ESP32 server still writes to `data/db.json`; run the command
 again whenever you want to refresh the SQLite mirror.
 
-## ESP32 API URL
+## LAN Access and Dual-Band WiFi Setup
 
-Use your PC IPv4 address in the ESP32 firmware:
+The ESP32-S3 only supports **2.4 GHz WiFi**. Your computer/server may be connected to a **5 GHz** WiFi network. As long as both devices are connected to the **same dual-band router** and **client isolation is disabled**, they can communicate freely over the LAN regardless of which frequency band each device uses.
 
-```cpp
-const char* API_URL = "http://192.168.100.61:3000/api/attendance/scan";
+### Server configuration (already done)
+
+The Node.js server binds to `0.0.0.0` and exposes:
+
+- `GET /api/health` - public health check
+- `POST /api/attendance/scan` - ESP32 scan endpoint
+- Other authenticated `/api/*` endpoints
+
+Start the server with `start-server.bat` or `npm start`. The console will print your PC's local IPv4 addresses.
+
+### Router settings
+
+1. **Disable AP Isolation / Client Isolation / Guest Network Isolation / Device Isolation** in your router admin panel. This is the most common cause of "same WiFi but cannot communicate" issues.
+2. Ensure both the ESP32 and your PC are on the same LAN subnet (e.g., `192.168.1.x` or `192.168.100.x`).
+3. If your router has separate SSIDs for 2.4 GHz and 5 GHz, make sure both are bridged to the same LAN (most consumer routers do this by default).
+
+### Windows Firewall
+
+Allow inbound TCP port 3000 for Domain, Private, and Public profiles. Run the included script as Administrator:
+
+```powershell
+.\allow-port-3000.ps1
 ```
 
-API key must match:
+Or manually:
+
+```powershell
+New-NetFirewallRule -DisplayName "GMS Attendance Port 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Any
+```
+
+### ESP32 firmware configuration
+
+Edit `arduino/gms_attendance_esp32s3/secrets.h`:
 
 ```cpp
-const char* API_KEY = "YOUR_DEVICE_API_KEY";
+// Connect to the 2.4 GHz SSID only
+const char* WIFI_SSID = "YOUR-2.4G-SSID";
+const char* WIFI_PASSWORD = "YOUR-2.4G-PASSWORD";
+
+// Use your PC's local IPv4 address (not localhost, not 127.0.0.1)
+const char* SERVER_URL = "http://192.168.1.10:3000";
 ```
+
+**Avoid hardcoding a dynamic IP if possible.** Use one of these instead:
+
+- **DHCP reservation** in your router: assign a fixed IP to your PC's MAC address.
+- **Static local IP** on your PC's WiFi adapter.
+- **mDNS hostname** (if your router and ESP32 core support it): `http://gms-pc.local:3000`
+
+### Test from another phone
+
+On a phone connected to the same WiFi (2.4 GHz or 5 GHz), open:
+
+```
+http://192.168.1.10:3000/api/health
+```
+
+Expected response:
+
+```json
+{"status":"online"}
+```
+
+If this works but the ESP32 cannot connect, check:
+1. ESP32 is connected to the 2.4 GHz SSID (not 5 GHz).
+2. Client isolation is disabled.
+3. Windows Firewall allows port 3000.
+4. `SERVER_URL` in `secrets.h` matches the server IP shown by `start-server.bat`.
 
 ## ESP32 MicroSD Offline Storage
 

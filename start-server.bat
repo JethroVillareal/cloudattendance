@@ -14,10 +14,10 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4"') do (
 )
 echo.
 echo  ESP32 target (secrets.h):
-echo   LOCAL_API_URL = http://192.168.100.61:3000/api/attendance/scan
+echo   SERVER_URL = http://YOUR-PC-IP:3000
 echo.
 echo  Test from phone browser:
-echo   http://192.168.100.61:3000/api/health
+echo   http://YOUR-PC-IP:3000/api/health
 echo.
 echo  If ESP32 cannot connect, run allow-port-3000.ps1 as Administrator.
 echo =========================================

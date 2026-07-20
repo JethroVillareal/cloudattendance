@@ -219,7 +219,7 @@ bool oledReady = false;
 bool rtcReady = false;
 bool wasWiFiConnected = false;
 bool serverReachable = false;
-String activeApiUrl = String(LOCAL_API_URL);
+String activeApiUrl = String(SERVER_URL) + "/api/attendance/scan";
 bool activeServerIsLocal = true;
 unsigned long lastLocalServerProbeAt = 0;
 int lastServerStatusCode = 0;
@@ -1472,8 +1472,9 @@ bool commitEnrollmentQueue(bool hasRemainingRecords) {
 
 void startWiFiConnection() {
   Serial.println();
-  Serial.print("[WIFI] Connecting to ");
+  Serial.print("[WIFI] Connecting to 2.4 GHz SSID: ");
   Serial.println(WIFI_SSID);
+  Serial.println("[WIFI] Ensure this is the 2.4 GHz network; ESP32-S3 cannot use 5 GHz.");
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -1493,6 +1494,7 @@ void waitForInitialWiFi() {
   deviceState = DeviceState::OFFLINE;
   showOledScreen("OFFLINE MODE", "WiFi connecting", "Attendance Saved", "Syncing Later", "CODE: WIFI-01");
   Serial.println("[WIFI] Connection continues in background; local scanning is ready.");
+  Serial.printf("[WIFI] Target server: %s\n", String(SERVER_URL).c_str());
 }
 
 void maintainWiFiConnection() {
@@ -1501,6 +1503,11 @@ void maintainWiFiConnection() {
       wasWiFiConnected = true;
       currentWiFiRetryIntervalMs = WIFI_RETRY_INTERVAL_MS;
       Serial.println("[WIFI] Reconnected.");
+      Serial.print("[WIFI] IP: ");
+      Serial.println(WiFi.localIP());
+      Serial.print("[WIFI] RSSI: ");
+      Serial.print(WiFi.RSSI());
+      Serial.println(" dBm");
       showOledScreen(
         "WIFI RECONNECTED",
         "CHECKING SERVER",
@@ -1800,6 +1807,40 @@ bool sendScanToEndpoint(
   return true;
 }
 
+bool checkServerHealth() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[HEALTH] WiFi not connected.");
+    return false;
+  }
+
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  HTTPClient http;
+  http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
+
+  String healthUrl = String(SERVER_URL) + "/api/health";
+  if (!beginDeviceHttp(http, plainClient, secureClient, healthUrl)) {
+    Serial.println("[HEALTH] HTTP init failed.");
+    return false;
+  }
+
+  int statusCode = http.GET();
+  String responseBody = "";
+  if (statusCode > 0) {
+    responseBody = http.getString();
+  }
+  http.end();
+
+  Serial.print("[HEALTH] Status: ");
+  Serial.println(statusCode);
+  if (!responseBody.isEmpty()) {
+    Serial.print("[HEALTH] Response: ");
+    Serial.println(responseBody);
+  }
+
+  return statusCode == 200;
+}
+
 bool sendScanToServer(const String& json, ApiResponse& response) {
   if (WiFi.status() != WL_CONNECTED) {
     serverReachable = false;
@@ -1807,20 +1848,31 @@ bool sendScanToServer(const String& json, ApiResponse& response) {
     return false;
   }
 
-  const bool probeLocal = activeServerIsLocal || millis() - lastLocalServerProbeAt >= LOCAL_SERVER_PROBE_INTERVAL_MS;
-  if (probeLocal) {
-    lastLocalServerProbeAt = millis();
-    Serial.println("[API] Trying local attendance server...");
-    if (sendScanToEndpoint(String(LOCAL_API_URL), json, response)) {
-      selectActiveServer(String(LOCAL_API_URL), true);
+  Serial.println("[API] Trying local attendance server first...");
+  for (int attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) {
+      Serial.printf("[API] Local retry %d/2...\n", attempt);
+      delay(1000);
+    }
+    if (sendScanToEndpoint(String(SERVER_URL) + "/api/attendance/scan", json, response)) {
+      if (millis() - lastLocalServerProbeAt >= LOCAL_SERVER_PROBE_INTERVAL_MS) {
+        lastLocalServerProbeAt = millis();
+      }
+      selectActiveServer(String(SERVER_URL) + "/api/attendance/scan", true);
       return true;
     }
   }
 
   Serial.println("[API] Local unavailable; trying Render cloud...");
-  if (sendScanToEndpoint(String(CLOUD_API_URL), json, response)) {
-    selectActiveServer(String(CLOUD_API_URL), false);
-    return true;
+  for (int attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) {
+      Serial.printf("[API] Cloud retry %d/2...\n", attempt);
+      delay(1000);
+    }
+    if (sendScanToEndpoint(String(CLOUD_API_URL), json, response)) {
+      selectActiveServer(String(CLOUD_API_URL), false);
+      return true;
+    }
   }
 
   serverReachable = false;
@@ -2020,13 +2072,6 @@ void sendReaderHeartbeat() {
     return;
   }
 
-  if (!activeServerIsLocal && millis() - lastLocalServerProbeAt >= LOCAL_SERVER_PROBE_INTERVAL_MS) {
-    activeApiUrl = String(LOCAL_API_URL);
-    activeServerIsLocal = true;
-    lastLocalServerProbeAt = millis();
-  }
-  const bool attemptedLocal = activeServerIsLocal;
-
   JsonDocument document;
   document["deviceId"] = DEVICE_ID;
   document["source"] = "ESP32-S3";
@@ -2052,63 +2097,81 @@ void sendReaderHeartbeat() {
   String json;
   serializeJson(document, json);
 
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  HTTPClient http;
-  http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
+  bool sent = false;
+  int statusCode = 0;
 
-  if (!beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
-    Serial.println(
-      "[API] Heartbeat initialization failed."
-    );
-    if (attemptedLocal) {
+  activeApiUrl = String(SERVER_URL) + "/api/attendance/scan";
+  activeServerIsLocal = true;
+  for (int attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) {
+      Serial.printf("[HEARTBEAT] Local retry %d/2...\n", attempt);
+      delay(1000);
+    }
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    HTTPClient http;
+    http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
+    if (!beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
+      Serial.println("[HEARTBEAT] Local HTTP init failed.");
+      continue;
+    }
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-API-Key", API_KEY);
+    http.addHeader("X-Device-ID", DEVICE_ID);
+    statusCode = http.POST(json);
+    String responseBody = statusCode > 0 ? http.getString() : "";
+    http.end();
+    lastServerStatusCode = statusCode;
+    Serial.print("[HEARTBEAT] Local status: ");
+    Serial.println(statusCode);
+    if (statusCode >= 200 && statusCode < 300) {
+      serverReachable = true;
+      selectActiveServer(activeApiUrl, true);
+      parseHeartbeatResponse(responseBody);
+      sent = true;
+      lastLocalServerProbeAt = millis();
+      break;
+    }
+  }
+
+  if (!sent) {
+    for (int attempt = 1; attempt <= 2; attempt++) {
+      if (attempt > 1) {
+        Serial.printf("[HEARTBEAT] Cloud retry %d/2...\n", attempt);
+        delay(1000);
+      }
       activeApiUrl = String(CLOUD_API_URL);
       activeServerIsLocal = false;
-      sendReaderHeartbeat();
-      return;
+      WiFiClient plainClient;
+      WiFiClientSecure secureClient;
+      HTTPClient http;
+      http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
+      if (!beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
+        Serial.println("[HEARTBEAT] Cloud HTTP init failed.");
+        continue;
+      }
+      http.addHeader("Content-Type", "application/json");
+      http.addHeader("X-API-Key", API_KEY);
+      http.addHeader("X-Device-ID", DEVICE_ID);
+      statusCode = http.POST(json);
+      String responseBody = statusCode > 0 ? http.getString() : "";
+      http.end();
+      lastServerStatusCode = statusCode;
+      Serial.print("[HEARTBEAT] Cloud status: ");
+      Serial.println(statusCode);
+      if (statusCode >= 200 && statusCode < 300) {
+        serverReachable = true;
+        selectActiveServer(activeApiUrl, false);
+        parseHeartbeatResponse(responseBody);
+        sent = true;
+        break;
+      }
     }
+  }
+
+  if (!sent) {
     serverReachable = false;
-    lastServerStatusCode = 0;
-    resetIdleCloseStatus();
-    if (!feedbackActive) {
-      applyIdleReadyColor();
-      showIdleOled();
-    }
-    return;
-  }
-
-  http.addHeader(
-    "Content-Type",
-    "application/json"
-  );
-  http.addHeader("X-API-Key", API_KEY);
-  http.addHeader("X-Device-ID", DEVICE_ID);
-
-  const int statusCode = http.POST(json);
-  String responseBody = "";
-
-  if (statusCode > 0) {
-    responseBody = http.getString();
-  }
-
-  http.end();
-
-  lastServerStatusCode = statusCode;
-  serverReachable = (statusCode >= 200 && statusCode < 300);
-
-  Serial.print("[API] Heartbeat status: ");
-  Serial.println(statusCode);
-
-  if (serverReachable) {
-    selectActiveServer(activeApiUrl, attemptedLocal);
-    parseHeartbeatResponse(responseBody);
-  } else {
-    if (attemptedLocal) {
-      activeApiUrl = String(CLOUD_API_URL);
-      activeServerIsLocal = false;
-      sendReaderHeartbeat();
-      return;
-    }
+    lastServerStatusCode = statusCode;
     resetIdleCloseStatus();
   }
 
@@ -3837,6 +3900,17 @@ void setup() {
   }
 
   waitForInitialWiFi();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("[WIFI] Checking server health endpoint...");
+    if (checkServerHealth()) {
+      Serial.println("[HEALTH] Server is online.");
+      serverReachable = true;
+    } else {
+      Serial.println("[HEALTH] Server health check failed.");
+      serverReachable = false;
+    }
+  }
 
   Serial.print("[OFFLINE] Storage backend: ");
   Serial.println(offlineStorageName());

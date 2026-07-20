@@ -76,6 +76,21 @@
 
   function installCanonicalSidebar(currentPath) {
     document.querySelectorAll('.topbar').forEach((topbar) => topbar.remove());
+    const workspace = document.querySelector('.workspace');
+    if (workspace && !workspace.querySelector('.topbar')) {
+      const topbar = document.createElement('header');
+      topbar.className = 'topbar';
+      topbar.innerHTML = `
+        <div class="topbar-left">
+          <button class="top-icon menu" title="Menu" type="button"><i data-lucide="menu"></i></button>
+          <button class="top-icon" title="Messages" type="button"><i data-lucide="mail"></i></button>
+          <button class="top-icon" title="Notifications" type="button"><i data-lucide="bell"></i><span class="notification-count">3</span></button>
+          <button class="top-icon" title="Calendar" type="button"><i data-lucide="calendar-days"></i></button>
+          <button class="top-icon" title="Help" type="button"><i data-lucide="circle-help"></i></button>
+        </div>`;
+      workspace.insertBefore(topbar, workspace.firstChild);
+      window.lucide?.createIcons();
+    }
     const sidebar = document.querySelector('.sidebar');
     if (!sidebar) return;
     const items = [
@@ -2553,6 +2568,16 @@
   if (path === '/settings') {
     bindSettingsTabs();
     $('generalSettingsForm')?.addEventListener('submit', saveSettings, true);
+  }
+  const modalBackdrop = $('modalBackdrop');
+  if (modalBackdrop) {
+    $('modalClose')?.addEventListener('click', () => modalBackdrop.classList.remove('show'), true);
+    $('modalCancel')?.addEventListener('click', () => {
+      if (modalBackdrop.dataset.modalMode !== 'attendance-review') modalBackdrop.classList.remove('show');
+    }, true);
+    modalBackdrop.addEventListener('click', (event) => {
+      if (event.target === modalBackdrop) modalBackdrop.classList.remove('show');
+    }, true);
   }
   ['refreshButton', 'refreshDevicesButton', 'refreshLogsButton', 'loadButton'].forEach((id) =>
     $(id)?.addEventListener('click', (event) => { event.preventDefault(); event.stopImmediatePropagation(); safeRun(); }, true));

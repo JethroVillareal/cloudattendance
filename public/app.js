@@ -1111,6 +1111,7 @@ function timeCardParams() {
 }
 
 async function loadTimeCard() {
+  if (!$('timeCardFrom') || !$('timeCardTo') || !$('timeCardEmployee')) return;
   const selectedEmployee = $('timeCardEmployee').value;
   if (selectedEmployee) state.reportEmployeeId = selectedEmployee;
   const data = await api(`/api/timecard?${timeCardParams().toString()}`);
@@ -1662,22 +1663,38 @@ async function loadAll() {
 
 function boot() {
   document.querySelectorAll('[data-login-mode]').forEach((button) => button.addEventListener('click', () => setLoginMode(button.dataset.loginMode)));
-  $('toggleLoginPassword').addEventListener('click', () => setSecretVisibility('loginPassword', 'toggleLoginPassword'));
-  $('toggleLoginApiKey').addEventListener('click', () => setSecretVisibility('loginApiKey', 'toggleLoginApiKey'));
+  $('toggleLoginPassword')?.addEventListener('click', () => setSecretVisibility('loginPassword', 'toggleLoginPassword'));
+  $('toggleLoginApiKey')?.addEventListener('click', () => setSecretVisibility('loginApiKey', 'toggleLoginApiKey'));
   buildScheduleForm();
   const today = todayKey();
-  $('timeCardFrom').value = today;
-  $('timeCardTo').value = today;
-  $('timeCardCutoff').value = defaultCutoffForDate(today);
-  applyCutoffToDates();
-  $('manualDate').value = today;
-  $('emergencyDateTime').value = new Date().toISOString().slice(0, 16);
+  if ($('timeCardFrom')) $('timeCardFrom').value = today;
+  if ($('timeCardTo')) $('timeCardTo').value = today;
+  if ($('timeCardCutoff')) $('timeCardCutoff').value = defaultCutoffForDate(today);
+  if ($('timeCardFrom') && $('timeCardTo')) applyCutoffToDates();
+  if ($('manualDate')) $('manualDate').value = today;
+  if ($('emergencyDateTime')) $('emergencyDateTime').value = new Date().toISOString().slice(0, 16);
   setSettingsForm();
   setActiveView(new URLSearchParams(window.location.search).get('view') || 'dashboardView');
   setTimeCardTab('recordsTab');
 
+  const standaloneRedirectMap = {
+    dashboardView: '/dashboard',
+    timeCardView: '/timecard',
+    enrollmentView: '/enrollment',
+    employeesView: '/employees',
+    devicesView: '/devices',
+    settingsView: '/settings',
+    logsView: '/logs'
+  };
   document.querySelectorAll('.nav-item').forEach((button) => {
-    button.addEventListener('click', () => setActiveView(button.dataset.view));
+    const target = standaloneRedirectMap[button.dataset.view];
+    button.addEventListener('click', () => {
+      if (target) {
+        window.location.assign(target);
+      } else {
+        setActiveView(button.dataset.view);
+      }
+    });
   });
   document.querySelectorAll('[data-view-link]').forEach((button) => {
     button.addEventListener('click', () => setActiveView(button.dataset.viewLink));
@@ -1685,59 +1702,69 @@ function boot() {
   document.querySelectorAll('.subnav-item').forEach((button) => {
     button.addEventListener('click', () => setTimeCardTab(button.dataset.timecardTab));
   });
-  $('refreshBtn').addEventListener('click', loadAll);
+  $('refreshBtn')?.addEventListener('click', loadAll);
   $('departmentForm')?.addEventListener('submit', (event) => submitDirectory(event, 'departments').catch((error) => alert(error.message)));
   $('designationForm')?.addEventListener('submit', (event) => submitDirectory(event, 'designations').catch((error) => alert(error.message)));
   $('leaveRequestForm')?.addEventListener('submit', (event) => submitLeaveRequest(event).catch((error) => alert(error.message)));
   $('correctionRequestForm')?.addEventListener('submit', (event) => submitCorrectionRequest(event).catch((error) => alert(error.message)));
   $('workflowQueue')?.addEventListener('click', (event) => reviewWorkflow(event).catch((error) => alert(error.message)));
-  $('createEmployeeBtn').addEventListener('click', openCreateEmployeeModal);
-  $('startEnrollmentBtn').addEventListener('click', startEnrollment);
-  $('loadTimeCardBtn').addEventListener('click', loadTimeCard);
-  $('timeCardCutoff').addEventListener('change', () => {
-    applyCutoffToDates();
-    loadTimeCard();
-  });
-  $('timeCardFrom').addEventListener('change', () => {
-    $('timeCardCutoff').value = 'custom';
-    loadTimeCard();
-  });
-  $('timeCardTo').addEventListener('change', () => {
-    $('timeCardCutoff').value = 'custom';
-    loadTimeCard();
-  });
-  $('timeCardEmployee').addEventListener('change', () => {
-    const employeeId = $('timeCardEmployee').value;
-    state.reportEmployeeId = employeeId;
-    loadTimeCard().then(() => {
-      if (employeeId) openTimeCardModal(employeeId);
+  $('createEmployeeBtn')?.addEventListener('click', openCreateEmployeeModal);
+  $('startEnrollmentBtn')?.addEventListener('click', startEnrollment);
+  $('loadTimeCardBtn')?.addEventListener('click', loadTimeCard);
+  if ($('timeCardCutoff')) {
+    $('timeCardCutoff').addEventListener('change', () => {
+      applyCutoffToDates();
+      loadTimeCard();
     });
-  });
-  $('timeCardStatus').addEventListener('change', loadTimeCard);
-  $('timeCardBranch').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') loadTimeCard();
-  });
-  $('printTimeCardBtn').addEventListener('click', printTimeCard);
-  $('pdfTimeCardBtn').addEventListener('click', printTimeCard);
-  $('pngTimeCardBtn').addEventListener('click', saveTimeCardPng);
-  $('csvTimeCardBtn').addEventListener('click', exportCsv);
-  $('saveTimeCardPhotoBtn').addEventListener('click', saveModalTimeCardPhoto);
-  $('saveTimeCardPdfBtn').addEventListener('click', printModalTimeCardPdf);
-  $('closeTimeCardModalBtn').addEventListener('click', closeTimeCardModal);
-  $('settingsForm').addEventListener('submit', saveSettings);
-  $('manualStatusForm').addEventListener('submit', saveManualStatus);
-  $('emergencyForm').addEventListener('submit', saveEmergencyAttendance);
-  $('employeeForm').addEventListener('submit', saveEmployee);
-  $('closeModalBtn').addEventListener('click', closeModal);
-  $('cancelBtn').addEventListener('click', closeModal);
-  $('clearAttendanceBtn').addEventListener('click', clearAttendance);
-  $('clearPendingBtn').addEventListener('click', clearPending);
-  $('enableAlarmBtn').addEventListener('click', unlockAudio);
-  $('testAlarmBtn').addEventListener('click', testAlarm);
-  $('modalBackdrop').addEventListener('click', (event) => {
+  }
+  if ($('timeCardFrom')) {
+    $('timeCardFrom').addEventListener('change', () => {
+      $('timeCardCutoff').value = 'custom';
+      loadTimeCard();
+    });
+  }
+  if ($('timeCardTo')) {
+    $('timeCardTo').addEventListener('change', () => {
+      $('timeCardCutoff').value = 'custom';
+      loadTimeCard();
+    });
+  }
+  if ($('timeCardEmployee')) {
+    $('timeCardEmployee').addEventListener('change', () => {
+      const employeeId = $('timeCardEmployee').value;
+      state.reportEmployeeId = employeeId;
+      loadTimeCard().then(() => {
+        if (employeeId) openTimeCardModal(employeeId);
+      });
+    });
+  }
+  $('timeCardStatus')?.addEventListener('change', loadTimeCard);
+  if ($('timeCardBranch')) {
+    $('timeCardBranch').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') loadTimeCard();
+    });
+  }
+  $('printTimeCardBtn')?.addEventListener('click', printTimeCard);
+  $('pdfTimeCardBtn')?.addEventListener('click', printTimeCard);
+  $('pngTimeCardBtn')?.addEventListener('click', saveTimeCardPng);
+  $('csvTimeCardBtn')?.addEventListener('click', exportCsv);
+  $('saveTimeCardPhotoBtn')?.addEventListener('click', saveModalTimeCardPhoto);
+  $('saveTimeCardPdfBtn')?.addEventListener('click', printModalTimeCardPdf);
+  $('closeTimeCardModalBtn')?.addEventListener('click', closeTimeCardModal);
+  $('settingsForm')?.addEventListener('submit', saveSettings);
+  $('manualStatusForm')?.addEventListener('submit', saveManualStatus);
+  $('emergencyForm')?.addEventListener('submit', saveEmergencyAttendance);
+  $('employeeForm')?.addEventListener('submit', saveEmployee);
+  $('closeModalBtn')?.addEventListener('click', closeModal);
+  $('cancelBtn')?.addEventListener('click', closeModal);
+  $('clearAttendanceBtn')?.addEventListener('click', clearAttendance);
+  $('clearPendingBtn')?.addEventListener('click', clearPending);
+  $('enableAlarmBtn')?.addEventListener('click', unlockAudio);
+  $('testAlarmBtn')?.addEventListener('click', testAlarm);
+  $('modalBackdrop')?.addEventListener('click', (event) => {
     if (event.target === $('modalBackdrop')) closeModal();
   });
-  $('timeCardModalBackdrop').addEventListener('click', (event) => {
+  $('timeCardModalBackdrop')?.addEventListener('click', (event) => {
     if (event.target === $('timeCardModalBackdrop')) closeTimeCardModal();
   });
   window.addEventListener('click', () => { state.audioReady = state.audioReady || false; }, { once: true });

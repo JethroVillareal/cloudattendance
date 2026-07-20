@@ -71,6 +71,19 @@ const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
 
+function getLanIps() {
+  const interfaces = require('os').networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push({ name, address: iface.address });
+      }
+    }
+  }
+  return ips;
+}
+
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const DATA_DIR = path.join(ROOT_DIR, 'data');
@@ -467,7 +480,7 @@ function securityHeaders(req) {
     ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
-    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`,
+    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://unpkg.com https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://unpkg.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`,
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -516,7 +529,7 @@ function sendFile(req, res, filePath, contentType) {
       body = Buffer.from(data.toString('utf8').replace(/<script(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`));
       const imageSources = `'self' data:${SUPABASE_IMAGE_ORIGIN ? ` ${SUPABASE_IMAGE_ORIGIN}` : ''}`;
       const socialImageSources = 'https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com https://graph.facebook.com https://*.fbcdn.net';
-      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`;
+      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}' https://unpkg.com https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://unpkg.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`;
     }
     res.writeHead(200, headers);
     res.end(body);
@@ -3161,7 +3174,7 @@ async function handleRequest(req, res) {
       const primaryFailed = ['unavailable', 'write_failed'].includes(storageStatus.postgresql);
       const fallbackFailed = storageStatus.activePrimary !== 'postgresql' && ['failed', 'invalid'].includes(storageStatus.sqliteBackup);
       const degraded = primaryFailed || fallbackFailed;
-      sendJson(res, degraded ? 503 : 200, { ok: !degraded, status: degraded ? 'degraded' : 'healthy', serverTime: nowIso(), timezone: DEVICE_TIMEZONE, schemaVersion: SCHEMA_VERSION, storage: storageStatus });
+      sendJson(res, degraded ? 503 : 200, { status: degraded ? 'degraded' : 'online' });
       return;
     }
 
@@ -3489,10 +3502,16 @@ async function startServer() {
 
   server.listen(PORT, '0.0.0.0', () => {
     const storageStatus = storage.getStatus();
+    const lanIps = getLanIps();
     console.log('=========================================');
     console.log('GMS Attendance Server with Time Card');
     console.log(`Local:   http://localhost:${PORT}`);
-    console.log(`Network: http://YOUR-PC-IP:${PORT}`);
+    if (lanIps.length) {
+      console.log('Network:');
+      lanIps.forEach(ip => console.log(`  ${ip.name}: http://${ip.address}:${PORT}`));
+    } else {
+      console.log(`Network: http://YOUR-PC-IP:${PORT}`);
+    }
     console.log('API key: configured (hidden)');
     console.log(`Timezone: ${DEVICE_TIMEZONE}`);
     console.log(`Primary storage: ${storageStatus.activePrimary}`);

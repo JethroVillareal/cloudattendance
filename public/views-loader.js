@@ -10,6 +10,27 @@ const viewFiles = [
 ];
 
 async function loadViews() {
+  try {
+    const authCheck = await fetch('/api/auth/me');
+    if (authCheck.ok) {
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get('view');
+      const viewMap = {
+        timecard: '/timecard',
+        enrollment: '/enrollment',
+        employees: '/employees',
+        devices: '/devices',
+        settings: '/settings',
+        logs: '/logs',
+        workforce: '/employees'
+      };
+      window.location.assign(viewMap[view] || '/dashboard');
+      return;
+    }
+  } catch (error) {
+    // Not logged in or endpoint unavailable — continue with main app shell.
+  }
+
   const container = document.getElementById('viewContainer');
 
   try {
