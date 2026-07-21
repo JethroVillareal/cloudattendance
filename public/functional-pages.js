@@ -2400,7 +2400,9 @@
             }
           }
           const refreshed = await api('/api/attendance?limit=500'); records.splice(0, records.length, ...refreshed.attendance.filter((record) => record.employeeId));
-          form.elements.password.value = ''; renderEmployees(); renderRecords(); toast('Daily attendance updated and status recalculated.');
+          form.elements.password.value = ''; renderEmployees(); renderRecords();
+          toast('Daily attendance updated and status recalculated.');
+          if (location.pathname === '/timecard') timecard().catch((error) => toast(error.message));
         } catch (error) { message.textContent = error.message; message.className = 'attendance-row-message error'; button.disabled = false; }
       });
       renderEmployees(); renderRecords();

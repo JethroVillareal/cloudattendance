@@ -480,7 +480,7 @@ function securityHeaders(req) {
     ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
-    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://unpkg.com https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://unpkg.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`,
+    'Content-Security-Policy': `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; font-src 'self' https://fonts.gstatic.com`,
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -529,7 +529,7 @@ function sendFile(req, res, filePath, contentType) {
       body = Buffer.from(data.toString('utf8').replace(/<script(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`));
       const imageSources = `'self' data:${SUPABASE_IMAGE_ORIGIN ? ` ${SUPABASE_IMAGE_ORIGIN}` : ''}`;
       const socialImageSources = 'https://lh3.googleusercontent.com https://platform-lookaside.fbsbx.com https://graph.facebook.com https://*.fbcdn.net';
-      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}' https://unpkg.com https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://unpkg.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net`;
+      headers['Content-Security-Policy'] = `default-src 'self'; img-src ${imageSources} ${socialImageSources}; media-src 'self'; frame-src 'self' https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'nonce-${nonce}' https://unpkg.com https://cdn.jsdelivr.net https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cloud-attendance-3553a.firebaseapp.com https://apis.google.com https://accounts.google.com https://www.google.com https://www.recaptcha.net; font-src 'self' https://fonts.gstatic.com`;
     }
     res.writeHead(200, headers);
     res.end(body);
@@ -2912,6 +2912,7 @@ async function handleEditAttendanceRecord(res, recordId, body, actor) {
     attendanceType: type,
     type,
     scannedAt: scanDate.toISOString(),
+    displayTime: displayTime(scanDate),
     punctuality: status.punctuality,
     lateMinutes: status.lateMinutes || 0,
     earlyOutMinutes: status.earlyOutMinutes || 0,
