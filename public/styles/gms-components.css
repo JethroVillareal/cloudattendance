@@ -1,4 +1,4 @@
-/* Final cross-page sizing guardrails for the standalone administration portal. */
+/* Final cross-page sizing guardrails for the GMS administration portal. */
 button, [role="button"], input, select, textarea { font: inherit; }
 button:not(:disabled), [role="button"] { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -15,6 +15,58 @@ input[type="search"]:focus-visible {
   outline: none !important;
   outline-offset: 0 !important;
   box-shadow: none !important;
+}
+
+.role-badge {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 20px;
+  margin-top: 6px;
+  padding: 0 8px;
+  align-items: center;
+  border: 1px solid #bfe7dc;
+  border-radius: 999px;
+  color: #066b5a;
+  background: #eaf8f4;
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+body[data-account-role="hr"] .role-badge {
+  color: #155fa8;
+  border-color: #c7def8;
+  background: #eef6ff;
+}
+
+body[data-account-role="viewer"] .role-badge {
+  color: #5b6475;
+  border-color: #d7dee9;
+  background: #f3f6fa;
+}
+
+body.viewer-mode .btn-primary,
+body.viewer-mode .review-button,
+body.viewer-mode .delete,
+body.viewer-mode .danger,
+body.viewer-mode [data-review],
+body.viewer-mode [data-delete-account],
+body.viewer-mode [data-edit-account],
+body.viewer-mode #verifyRecordsButton,
+body.viewer-mode #addEmployeeButton,
+body.viewer-mode #saveEmployeeButton,
+body.viewer-mode #startEnrollmentButton,
+body.viewer-mode #clearAttendanceLogs,
+body.viewer-mode #saveSettingsButton,
+body.viewer-mode .preview-attendance-button,
+body.viewer-mode .test-notification-button {
+  display: none !important;
+}
+
+body.viewer-mode input:not([type="search"]):not([type="date"]),
+body.viewer-mode select,
+body.viewer-mode textarea {
+  pointer-events: none;
 }
 
 label:has(> input[type="search"]),
@@ -210,11 +262,15 @@ img, svg { max-width: 100%; }
 .table-container, .table-wrapper, .table-responsive { max-width: 100%; overflow-x: auto; }
 
 @media (max-width: 720px) {
-  .app-shell, .app { display: block !important; }
-  .sidebar { position: static !important; width: 100% !important; height: auto !important; }
-  .navigation, .side-nav { display: flex !important; gap: 7px !important; overflow-x: auto !important; padding-bottom: 7px !important; }
-  .nav-item, .nav-link { min-width: max-content !important; min-height: 44px !important; padding-inline: 13px !important; }
-  .main, .main-content { padding: 14px !important; }
+  .app-shell, .app { display: flex !important; min-height: 100vh !important; flex-direction: column !important; }
+  .sidebar { position: sticky !important; top: 0 !important; z-index: 40 !important; width: 100% !important; min-width: 0 !important; height: auto !important; min-height: 0 !important; padding: 10px 12px 9px !important; border-right: 0 !important; border-bottom: 1px solid #dfe7f0 !important; overflow: visible !important; }
+  .brand { min-height: 44px !important; padding: 0 2px 8px !important; }
+  .brand-logo { width: 38px !important; height: 38px !important; flex-basis: 38px !important; }
+  .brand-info, .brand-details, .nav-item span, .nav-link span { display: block !important; }
+  .navigation, .side-nav { display: flex !important; flex-direction: row !important; gap: 8px !important; overflow-x: auto !important; overflow-y: hidden !important; padding: 0 1px 4px !important; }
+  .nav-item, .nav-link { width: auto !important; min-width: max-content !important; min-height: 38px !important; padding: 0 12px !important; justify-content: flex-start !important; gap: 9px !important; white-space: nowrap !important; }
+  .shared-server-status, .sidebar-status { display: none !important; }
+  .main, .main-content, .content, .accounts-main { width: 100% !important; min-width: 0 !important; padding: 14px 12px 18px !important; }
   .page-header, .page-heading, .page-title { align-items: flex-start !important; gap: 12px !important; }
   .page-actions, .header-actions, .toolbar-actions { flex-wrap: wrap !important; }
   .modal, .details-modal { width: calc(100vw - 24px) !important; max-height: calc(100svh - 24px) !important; }

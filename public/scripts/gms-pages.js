@@ -4,6 +4,35 @@
     Employees: '/employees', 'Employee Accounts': '/accounts', Devices: '/devices', Settings: '/settings', Logs: '/logs'
   };
   const $ = (id) => document.getElementById(id);
+  let currentUser = null;
+
+  const roleProfiles = {
+    admin: {
+      label: 'Administrator',
+      subtitle: 'Full system control',
+      nav: ['Dashboard', 'Time Card', 'Enrollment', 'Employees', 'Employee Accounts', 'Devices', 'Settings', 'Logs']
+    },
+    hr: {
+      label: 'HR Workspace',
+      subtitle: 'People and attendance operations',
+      nav: ['Dashboard', 'Time Card', 'Enrollment', 'Employees', 'Devices', 'Logs']
+    },
+    viewer: {
+      label: 'Viewer Mode',
+      subtitle: 'Read-only monitoring',
+      nav: ['Dashboard', 'Time Card', 'Employees', 'Devices', 'Logs']
+    }
+  };
+
+  const roleProfile = () => roleProfiles[currentUser?.role] || roleProfiles.admin;
+
+  // Re-initialize Lucide after dynamic rendering and browser back/forward cache restores.
+  const refreshLucideIcons = () => {
+    if (!window.lucide?.createIcons) return;
+    requestAnimationFrame(() => window.lucide?.createIcons());
+  };
+
+  window.addEventListener('pageshow', refreshLucideIcons);
   function clearStaticDemoContent() {
     const loadingRow = (body) => {
       const columns = body.closest('table')?.querySelectorAll('thead th').length || 1;
@@ -74,6 +103,24 @@
     }
   };
 
+  function applyRoleShell() {
+    const role = currentUser?.role || 'admin';
+    document.body.dataset.accountRole = role;
+    document.body.classList.toggle('viewer-mode', role === 'viewer');
+    document.body.classList.toggle('hr-mode', role === 'hr');
+    document.body.classList.toggle('admin-mode', role === 'admin');
+    const restrictedPage = role === 'viewer' && ['/enrollment', '/accounts', '/settings'].includes(location.pathname);
+    const hrAdminPage = role === 'hr' && ['/accounts', '/settings'].includes(location.pathname);
+    if (restrictedPage) {
+      toast('Viewer mode is read-only. Opening dashboard.');
+      window.location.replace('/dashboard');
+    }
+    if (hrAdminPage) {
+      toast('HR workspace does not include administrator settings.');
+      window.location.replace('/dashboard');
+    }
+  }
+
   function installCanonicalSidebar(currentPath) {
     document.querySelectorAll('.topbar').forEach((topbar) => topbar.remove());
     const workspace = document.querySelector('.workspace');
@@ -93,7 +140,7 @@
     }
     const sidebar = document.querySelector('.sidebar');
     if (!sidebar) return;
-    const items = [
+    const allItems = [
       ['Dashboard', '/dashboard', 'dashboard.svg'],
       ['Time Card', '/timecard', 'timecard.svg'],
       ['Enrollment', '/enrollment', 'fingerprint.svg'],
@@ -103,10 +150,12 @@
       ['Settings', '/settings', 'settings.svg'],
       ['Logs', '/logs', 'logs.svg']
     ];
+    const allowed = new Set(roleProfile().nav);
+    const items = allItems.filter(([label]) => allowed.has(label));
     sidebar.innerHTML = `
       <div class="brand shared-brand">
         <div class="brand-logo"><img src="/images/gwd-logo.jpg" alt="Gluta White Distributor logo"></div>
-        <div class="brand-info"><h1>GWD Attendance</h1><p>Loading branch...</p></div>
+        <div class="brand-info"><h1>GWD Attendance</h1><p>Loading branch...</p><span class="role-badge">${roleProfile().label}</span></div>
       </div>
       <nav class="navigation shared-navigation" aria-label="Main navigation">
         ${items.map(([label, route, icon]) => `<button class="nav-item shared-nav-item ${currentPath === route ? 'active' : ''}" type="button" data-page="${label}">
@@ -135,18 +184,22 @@
     document.querySelectorAll('.admin-avatar').forEach((avatar) => {
       avatar.innerHTML = '<img src="/images/gwd-logo.jpg" alt="GWD logo">';
     });
-    document.querySelectorAll('.admin-info strong').forEach((name) => { name.textContent = 'GWD Administrator'; });
-    document.querySelectorAll('.admin-info span').forEach((role) => { role.textContent = 'Local attendance server'; });
+    document.querySelectorAll('.admin-info strong').forEach((name) => { name.textContent = roleProfile().label; });
+    document.querySelectorAll('.admin-info span').forEach((role) => { role.textContent = roleProfile().subtitle; });
     document.querySelectorAll('.notification-badge').forEach((badge) => badge.remove());
   }
 
   async function loadSharedIdentity() {
     try {
-      const { settings } = await api('/api/settings');
+      const [identity, { settings }] = await Promise.all([api('/api/auth/me'), api('/api/settings')]);
+      currentUser = identity;
+      applyRoleShell();
+      installCanonicalSidebar(location.pathname);
+      installSharedBrand();
       const subtitle = document.querySelector('.brand-info p, .brand-details p');
       if (subtitle) subtitle.textContent = settings.branchName || 'Main Branch';
       document.querySelectorAll('.admin-info span').forEach((role) => {
-        role.textContent = settings.branchName || 'Main Branch';
+        role.textContent = `${roleProfile().subtitle} - ${settings.branchName || 'Main Branch'}`;
       });
     } catch (error) {
       console.error(error);
@@ -938,6 +991,66 @@
     employeeScanTimer = setTimeout(poll, 900);
   }
 
+  function ensureEmployeeEditorControls() {
+    const modal = $('employeeModal');
+    const footer = modal?.querySelector('.modal-footer');
+    if (!modal || !footer) return null;
+
+    let deleteButton = $('deleteEmployeeFromEditorButton');
+    if (!deleteButton) {
+      deleteButton = document.createElement('button');
+      deleteButton.id = 'deleteEmployeeFromEditorButton';
+      deleteButton.type = 'button';
+      deleteButton.className = 'modal-button danger employee-delete-button';
+      deleteButton.innerHTML = '<i data-lucide="trash-2"></i><span>Delete Employee</span>';
+      footer.insertBefore(deleteButton, footer.firstChild);
+    }
+
+    deleteButton.style.setProperty('margin-right', 'auto');
+    return deleteButton;
+  }
+
+  function closeEmployeeEditor() {
+    clearTimeout(employeeScanTimer);
+    employeeScanTimer = null;
+    clearInterval(employeePreviewTimer);
+    employeePreviewTimer = null;
+    employeeStagedFingerprints = [];
+    editingEmployeeId = null;
+    $('employeeModal')?.classList.remove('show');
+  }
+
+  async function deleteEmployeeFromEditor(button) {
+    if (!editingEmployeeId) return;
+
+    const employee = liveEmployeeRecords.find((record) => record.id === editingEmployeeId);
+    const employeeName = employee?.fullName || employee?.employeeCode || editingEmployeeId;
+
+    if (!window.confirm(`Delete ${employeeName}? This permanently removes the employee profile and cannot be undone.`)) {
+      return;
+    }
+
+    button.disabled = true;
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i data-lucide="loader-circle"></i> Deleting...';
+    refreshLucideIcons();
+
+    try {
+      const result = await api(`/api/employees/${encodeURIComponent(editingEmployeeId)}`, {
+        method: 'DELETE'
+      });
+
+      closeEmployeeEditor();
+      toast(result.message || `${employeeName} deleted.`);
+      await employees();
+    } catch (error) {
+      button.disabled = false;
+      button.innerHTML = originalHtml;
+      refreshLucideIcons();
+      toast(error.message);
+    }
+  }
+
   function setEmployeeModalMode(employee = null) {
     editingEmployeeId = employee?.id || null;
     employeeStagedFingerprints = [];
@@ -949,8 +1062,20 @@
     if ($('newStatus')) $('newStatus').value = employee?.active === false ? 'Inactive' : 'Active';
     if (title) title.textContent = employee ? 'Edit Employee' : 'Add Employee';
     if (saveButton) saveButton.textContent = employee ? 'Save Changes' : 'Save Employee';
+
+    const deleteButton = ensureEmployeeEditorControls();
+    if (deleteButton) {
+      const editing = Boolean(employee);
+      deleteButton.hidden = !editing;
+      deleteButton.disabled = false;
+      deleteButton.style.setProperty('display', editing ? 'inline-flex' : 'none', 'important');
+      deleteButton.style.setProperty('align-items', 'center');
+      deleteButton.style.setProperty('gap', '7px');
+      deleteButton.style.setProperty('margin-right', 'auto');
+    }
+
     modal.classList.add('show');
-    window.lucide?.createIcons();
+    refreshLucideIcons();
     const refreshProfilePreview = () => {
       const statusActive = $('newStatus')?.value !== 'Inactive';
       const state = $('employeeEditAccountState');
@@ -969,7 +1094,30 @@
     const page = document.querySelector('.page-employees') || document.body;
     if (page.dataset.liveEmployeeEditing) return;
     page.dataset.liveEmployeeEditing = 'true';
-    page.addEventListener('click', (event) => {
+    page.addEventListener('click', async (event) => {
+      const closeButton = event.target.closest('#closeEmployeeModal, #cancelEmployeeModal');
+      if (closeButton) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeEmployeeEditor();
+        return;
+      }
+
+      if (event.target === $('employeeModal')) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeEmployeeEditor();
+        return;
+      }
+
+      const deleteEmployeeButton = event.target.closest('#deleteEmployeeFromEditorButton');
+      if (deleteEmployeeButton) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        await deleteEmployeeFromEditor(deleteEmployeeButton);
+        return;
+      }
+
       const removeFingerprintButton = event.target.closest('[data-remove-fingerprint]');
       if (removeFingerprintButton) {
         event.preventDefault();
@@ -1009,6 +1157,15 @@
       setEmployeeModalMode();
     }, true);
     $('saveEmployeeButton')?.addEventListener('click', saveEmployee, true);
+
+    ensureEmployeeEditorControls();
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && $('employeeModal')?.classList.contains('show')) {
+        event.preventDefault();
+        closeEmployeeEditor();
+      }
+    }, true);
   }
 
   async function removeEmployeeFingerprint(fingerprintId, button) {
@@ -1159,8 +1316,7 @@
         }
       }
       toast(editingEmployeeId ? 'Employee changes saved.' : 'Employee saved to the server.');
-      editingEmployeeId = null;
-      $('employeeModal')?.classList.remove('show');
+      closeEmployeeEditor();
       await employees();
     } catch (error) {
       toast(error.message);
@@ -2050,6 +2206,11 @@
       if (label in summaryValues) item.querySelector('strong').textContent = summaryValues[label];
     });
     showTimeCardDetails(liveTimeCards[0]);
+
+    // timecard() updates the DOM asynchronously, so restore any Lucide icons
+    // that were not initialized during the first page render.
+    refreshLucideIcons();
+
     document.body.classList.remove('live-timecard-loading');
     document.body.classList.add('live-timecard-ready');
   }
@@ -2548,42 +2709,62 @@
   const runners = { '/dashboard': dashboard, '/devices': devices, '/employees': employees,
     '/enrollment': enrollment, '/logs': logs, '/timecard': timecard, '/settings': settings, '/accounts': employeeAccounts };
   const run = runners[path];
-  const safeRun = () => run?.().catch((error) => {
-    console.error(error);
-    document.body.classList.remove('live-dashboard-loading');
-    document.body.classList.remove('live-timecard-loading');
-    document.body.classList.add('live-dashboard-ready');
-    if (path === '/timecard') document.body.classList.add('live-timecard-ready');
-    toast(error.message);
-  });
+  const safeRun = async () => {
+    try {
+      await run?.();
+
+      // Every page runner can update the DOM asynchronously.
+      // Restore Lucide icons after Dashboard, Time Card, Devices, and other pages render.
+      refreshLucideIcons();
+    } catch (error) {
+      console.error(error);
+      document.body.classList.remove('live-dashboard-loading');
+      document.body.classList.remove('live-timecard-loading');
+      document.body.classList.add('live-dashboard-ready');
+      if (path === '/timecard') document.body.classList.add('live-timecard-ready');
+
+      refreshLucideIcons();
+      toast(error.message);
+    }
+  };
 
   installCanonicalSidebar(path);
   installSharedBrand();
-  loadSharedIdentity();
-  if (path === '/accounts') bindEmployeeAccountControls();
-  if (path === '/dashboard') bindLiveDashboardControls(safeRun);
-  if (path === '/employees') $('employeeForm')?.addEventListener('submit', saveEmployee, true);
-  if (path === '/enrollment') {
-    $('startEnrollmentButton')?.addEventListener('click', (event) => startEnrollment(event).catch((error) => toast(error.message)), true);
-    $('registrationForm')?.addEventListener('submit', registerForEnrollment, true);
-  }
-  if (path === '/settings') {
-    bindSettingsTabs();
-    $('generalSettingsForm')?.addEventListener('submit', saveSettings, true);
-  }
-  const modalBackdrop = $('modalBackdrop');
-  if (modalBackdrop) {
-    $('modalClose')?.addEventListener('click', () => modalBackdrop.classList.remove('show'), true);
-    $('modalCancel')?.addEventListener('click', () => {
-      if (modalBackdrop.dataset.modalMode !== 'attendance-review') modalBackdrop.classList.remove('show');
-    }, true);
-    modalBackdrop.addEventListener('click', (event) => {
-      if (event.target === modalBackdrop) modalBackdrop.classList.remove('show');
-    }, true);
-  }
-  ['refreshButton', 'refreshDevicesButton', 'refreshLogsButton', 'loadButton'].forEach((id) =>
-    $(id)?.addEventListener('click', (event) => { event.preventDefault(); event.stopImmediatePropagation(); safeRun(); }, true));
-  safeRun();
-  startAttendancePopupMonitor();
-  if (['/dashboard', '/devices', '/logs'].includes(path)) setInterval(safeRun, 5000);
+
+  // Run once after the shared layout has been installed.
+  refreshLucideIcons();
+
+  (async () => {
+    await loadSharedIdentity();
+    if (currentUser?.role === 'viewer' && ['/enrollment', '/accounts', '/settings'].includes(path)) return;
+    if (path === '/accounts') bindEmployeeAccountControls();
+    if (path === '/dashboard') bindLiveDashboardControls(safeRun);
+    if (path === '/employees' && currentUser?.role !== 'viewer') $('employeeForm')?.addEventListener('submit', saveEmployee, true);
+    if (path === '/enrollment' && currentUser?.role !== 'viewer') {
+      $('startEnrollmentButton')?.addEventListener('click', (event) => startEnrollment(event).catch((error) => toast(error.message)), true);
+      $('registrationForm')?.addEventListener('submit', registerForEnrollment, true);
+    }
+    if (path === '/settings' && currentUser?.role === 'admin') {
+      bindSettingsTabs();
+      $('generalSettingsForm')?.addEventListener('submit', saveSettings, true);
+    }
+    const modalBackdrop = $('modalBackdrop');
+    if (modalBackdrop) {
+      $('modalClose')?.addEventListener('click', () => modalBackdrop.classList.remove('show'), true);
+      $('modalCancel')?.addEventListener('click', () => {
+        if (modalBackdrop.dataset.modalMode !== 'attendance-review') modalBackdrop.classList.remove('show');
+      }, true);
+      modalBackdrop.addEventListener('click', (event) => {
+        if (event.target === modalBackdrop) modalBackdrop.classList.remove('show');
+      }, true);
+    }
+    ['refreshButton', 'refreshDevicesButton', 'refreshLogsButton', 'loadButton'].forEach((id) =>
+      $(id)?.addEventListener('click', (event) => { event.preventDefault(); event.stopImmediatePropagation(); safeRun(); }, true));
+    safeRun();
+    startAttendancePopupMonitor();
+    if (['/dashboard', '/devices', '/logs'].includes(path)) setInterval(safeRun, 5000);
+  })().catch((error) => {
+    console.error(error);
+    toast(error.message);
+  });
 })();

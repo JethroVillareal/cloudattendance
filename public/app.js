@@ -1677,7 +1677,7 @@ function boot() {
   setActiveView(new URLSearchParams(window.location.search).get('view') || 'dashboardView');
   setTimeCardTab('recordsTab');
 
-  const standaloneRedirectMap = {
+  const officialRouteMap = {
     dashboardView: '/dashboard',
     timeCardView: '/timecard',
     enrollmentView: '/enrollment',
@@ -1687,7 +1687,7 @@ function boot() {
     logsView: '/logs'
   };
   document.querySelectorAll('.nav-item').forEach((button) => {
-    const target = standaloneRedirectMap[button.dataset.view];
+    const target = officialRouteMap[button.dataset.view];
     button.addEventListener('click', () => {
       if (target) {
         window.location.assign(target);

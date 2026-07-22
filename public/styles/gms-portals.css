@@ -59,3 +59,4 @@ input, select, textarea, form button, .logout { min-height: 44px; }
   .detail, .activity, .request, .notification, .linked { flex-wrap: wrap; gap: 10px; }
   .profile-photo-editor { align-items: flex-start; flex-direction: column; }
 }
+}

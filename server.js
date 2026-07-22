@@ -88,6 +88,7 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const DATA_DIR = path.join(ROOT_DIR, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
+const SESSION_FILE = path.join(DATA_DIR, 'sessions.json');
 
 const sessions = new Map();
 const rateBuckets = new Map();
@@ -127,6 +128,94 @@ const DISPLAY_COMMAND_TITLES = [
   'EMERGENCY DENIED'
 ];
 
+const sseClients = new Set();
+
+function persistSessions() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    const now = Date.now();
+    const activeSessions = [...sessions.entries()]
+      .filter(([, session]) => session && session.expiresAt > now)
+      .map(([token, session]) => [token, session]);
+    fs.writeFileSync(SESSION_FILE, JSON.stringify(activeSessions, null, 2));
+  } catch (error) {
+    console.warn('[sessions] Unable to persist browser sessions:', error.message);
+  }
+}
+
+function loadPersistedSessions() {
+  try {
+    if (!fs.existsSync(SESSION_FILE)) return;
+    const now = Date.now();
+    const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+    if (!Array.isArray(saved)) return;
+    saved.forEach(([token, session]) => {
+      if (typeof token === 'string' && session && session.expiresAt > now) {
+        sessions.set(token, session);
+      }
+    });
+    persistSessions();
+  } catch (error) {
+    console.warn('[sessions] Unable to load saved browser sessions:', error.message);
+  }
+}
+
+function broadcastSse(event, data) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of sseClients) {
+    if (res.writable) {
+      res.write(payload);
+    }
+  }
+}
+
+function notifyEmployee(db, employeeId, title, message, type = 'INFO') {
+  createNotification(db, { employeeId, title, message, type });
+  broadcastSse('notification', { employeeId, title, message, type });
+}
+
+async function sendEmailNotification(to, subject, text) {
+  const smtpHost = String(process.env.SMTP_HOST || '').trim();
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpUser = String(process.env.SMTP_USER || '').trim();
+  const smtpPass = String(process.env.SMTP_PASS || '').trim();
+  const from = String(process.env.SMTP_FROM || smtpUser || 'attendance@localhost').trim();
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    console.log('[EMAIL] Skipped: SMTP not configured.');
+    return false;
+  }
+  try {
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransport({ host: smtpHost, port: smtpPort, secure: smtpPort === 465, auth: { user: smtpUser, pass: smtpPass } });
+    await transporter.sendMail({ from, to, subject, text });
+    console.log(`[EMAIL] Sent to ${to}: ${subject}`);
+    return true;
+  } catch (error) {
+    console.error('[EMAIL] Failed:', error.message);
+    return false;
+  }
+}
+
+async function sendSmsNotification(to, message) {
+  const twilioSid = String(process.env.TWILIO_ACCOUNT_SID || '').trim();
+  const twilioToken = String(process.env.TWILIO_AUTH_TOKEN || '').trim();
+  const twilioFrom = String(process.env.TWILIO_FROM || '').trim();
+  if (!twilioSid || !twilioToken || !twilioFrom) {
+    console.log('[SMS] Skipped: Twilio not configured.');
+    return false;
+  }
+  try {
+    const twilio = require('twilio');
+    const client = twilio(twilioSid, twilioToken);
+    await client.messages.create({ body: message, from: twilioFrom, to });
+    console.log(`[SMS] Sent to ${to}: ${message}`);
+    return true;
+  } catch (error) {
+    console.error('[SMS] Failed:', error.message);
+    return false;
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -158,29 +247,31 @@ function emptyDb() {
   };
 }
 
-function defaultSettings() {
-  return {
-    branchName: 'Main Branch',
-    defaultShiftStart: '09:00',
-    defaultShiftEnd: '18:00',
-    graceMinutes: 10,
-    duplicateScanDelayMinutes: Math.max(1, Math.round(DUPLICATE_SECONDS / 60)),
-    requiredPaidHours: 8,
-    lunchBreakStart: '12:00',
-    lunchBreakEnd: '13:00',
-    afternoonBreakStart: '15:00',
-    afternoonBreakEnd: '15:15',
-    earlyOutProtectionEnabled: true,
-    emergencyTimeOutEnabled: true,
-    pcBreakAlarmEnabled: true,
-    esp32DisplayDurationMs: DEFAULT_DEVICE_DISPLAY_MS,
-    apiKey: API_KEY
-  };
-}
+  function defaultSettings() {
+    return {
+      branchName: 'Main Branch',
+      defaultShiftStart: '09:00',
+      defaultShiftEnd: '18:00',
+      graceMinutes: 10,
+      duplicateScanDelayMinutes: Math.max(1, Math.round(DUPLICATE_SECONDS / 60)),
+      requiredPaidHours: 8,
+      lunchBreakStart: '12:00',
+      lunchBreakEnd: '13:00',
+      afternoonBreakStart: '15:00',
+      afternoonBreakEnd: '15:15',
+      earlyOutProtectionEnabled: true,
+      emergencyTimeOutEnabled: true,
+      pcBreakAlarmEnabled: true,
+      esp32DisplayDurationMs: DEFAULT_DEVICE_DISPLAY_MS,
+      apiKey: API_KEY,
+      holidays: []
+    };
+  }
 
 function normalizeSettings(input) {
   const defaults = defaultSettings();
   const source = input && typeof input === 'object' ? input : {};
+  const holidays = Array.isArray(source.holidays) ? source.holidays.filter((item) => item && typeof item === 'object' && item.dateKey).map((item) => normalizeHoliday(item)) : defaults.holidays;
   return {
     branchName: normalizeName(source.branchName || defaults.branchName),
     defaultShiftStart: validTimeText(source.defaultShiftStart, defaults.defaultShiftStart),
@@ -196,7 +287,8 @@ function normalizeSettings(input) {
     emergencyTimeOutEnabled: source.emergencyTimeOutEnabled !== false,
     pcBreakAlarmEnabled: source.pcBreakAlarmEnabled !== false,
     esp32DisplayDurationMs: clampNumber(source.esp32DisplayDurationMs, defaults.esp32DisplayDurationMs, 1000, 15000),
-    apiKey: cleanDisplayText(source.apiKey || defaults.apiKey, 80)
+    apiKey: cleanDisplayText(source.apiKey || defaults.apiKey, 80),
+    holidays
   };
 }
 
@@ -220,6 +312,36 @@ function validTimeText(value, fallback) {
   const minute = Number(match[2]);
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function normalizeHoliday(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  const dateKey = String(source.dateKey || '').trim();
+  const match = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return {
+    id: source.id || createId('holiday'),
+    dateKey,
+    name: cleanDisplayText(source.name || 'Holiday', 80),
+    type: upperDisplayText(source.type || 'REGULAR', 32),
+    active: source.active !== false,
+    createdAt: source.createdAt || nowIso(),
+    updatedAt: nowIso()
+  };
+}
+
+function isHoliday(settings, dateKey) {
+  if (!settings || !Array.isArray(settings.holidays)) return false;
+  return settings.holidays.some((holiday) => holiday.active !== false && holiday.dateKey === dateKey);
+}
+
+function findHolidayForDate(settings, dateKey) {
+  if (!settings || !Array.isArray(settings.holidays)) return null;
+  return settings.holidays.find((holiday) => holiday.active !== false && holiday.dateKey === dateKey) || null;
 }
 
 function normalizeWeeklySchedule(input, fallbackStart = '09:00', fallbackOut = '18:00') {
@@ -510,7 +632,7 @@ function sendFile(req, res, filePath, contentType) {
     const etag = `"${crypto.createHash('sha256').update(data).digest('base64url').slice(0, 24)}"`;
     const isHtml = contentType.startsWith('text/html');
     const cacheControl = isHtml
-      ? 'private, max-age=300, must-revalidate'
+      ? 'no-store'
       : 'public, max-age=3600, must-revalidate';
     if (String(getHeader(req, 'if-none-match') || '') === etag) {
       res.writeHead(304, { ...securityHeaders(req), 'Cache-Control': cacheControl, ETag: etag });
@@ -655,9 +777,12 @@ function validSession(req) {
   if (!session) return null;
   if (session.expiresAt <= Date.now()) {
     sessions.delete(token);
+    persistSessions();
     return null;
   }
+  const previousExpiry = session.expiresAt;
   session.expiresAt = Date.now() + SESSION_TTL_MS;
+  if (session.expiresAt - previousExpiry > 60 * 1000) persistSessions();
   return session;
 }
 
@@ -956,9 +1081,14 @@ function getScheduleForDate(employee, dateKey) {
   return { dayKey, dayLabel: DAY_LABELS[DAY_KEYS.indexOf(dayKey)], ...schedule[dayKey] };
 }
 
-function computeTimeInStatus(employee, scanDate) {
+function computeTimeInStatus(employee, scanDate, settings = defaultSettings()) {
   const dateKey = localDateKey(scanDate);
   const schedule = getScheduleForDate(employee, dateKey);
+  const holiday = findHolidayForDate(settings, dateKey);
+
+  if (holiday) {
+    return { punctuality: 'HOLIDAY', lateMinutes: 0, statusText: holiday.name || 'HOLIDAY', holiday };
+  }
 
   if (schedule.dayOff) {
     return { punctuality: 'DAY_OFF', lateMinutes: 0, statusText: 'DAY OFF' };
@@ -976,9 +1106,14 @@ function computeTimeInStatus(employee, scanDate) {
   return { punctuality: 'ON_TIME', lateMinutes: 0, statusText: 'ON TIME' };
 }
 
-function computeTimeOutStatus(employee, scanDate) {
+function computeTimeOutStatus(employee, scanDate, settings = defaultSettings()) {
   const dateKey = localDateKey(scanDate);
   const schedule = getScheduleForDate(employee, dateKey);
+  const holiday = findHolidayForDate(settings, dateKey);
+
+  if (holiday) {
+    return { punctuality: 'HOLIDAY', lateMinutes: 0, earlyOutMinutes: 0, statusText: holiday.name || 'HOLIDAY', holiday };
+  }
 
   if (schedule.dayOff) {
     return { punctuality: 'DAY_OFF', earlyOutMinutes: 0, statusText: 'DAY OFF' };
@@ -1138,6 +1273,7 @@ function roleHomePath(role) {
 function createBrowserSession(req, res, account) {
   const token = crypto.randomBytes(32).toString('base64url');
   sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS, ip: requestIp(req), role: account.role, username: account.username, employeeId: account.employeeId || '' });
+  persistSessions();
   const secure = String(getHeader(req, 'x-forwarded-proto') || '').toLowerCase() === 'https';
   res.setHeader('Set-Cookie', `gms_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
 }
@@ -1345,6 +1481,45 @@ function normalizeWorkflowStatus(value, allowed, fallback = 'PENDING') {
   return allowed.includes(status) ? status : fallback;
 }
 
+function handleGetHolidays(res) {
+  const db = loadDb();
+  sendJson(res, 200, { holidays: db.settings.holidays || [] });
+}
+
+function handleCreateHoliday(res, body) {
+  const db = loadDb();
+  const holiday = normalizeHoliday(body || {});
+  if (!holiday) return sendJson(res, 400, { code: 'INVALID_HOLIDAY', message: 'A valid dateKey (YYYY-MM-DD) and name are required.' });
+  const duplicate = db.settings.holidays.find((item) => item.dateKey === holiday.dateKey && item.active !== false);
+  if (duplicate) return sendJson(res, 409, { code: 'DUPLICATE_HOLIDAY', message: `${holiday.dateKey} is already a holiday.` });
+  db.settings.holidays = db.settings.holidays.filter((item) => item.id !== holiday.id);
+  db.settings.holidays.unshift(holiday);
+  saveDb(db);
+  sendJson(res, 201, { holiday });
+}
+
+function handleUpdateHoliday(res, holidayId, body) {
+  const db = loadDb();
+  const holiday = db.settings.holidays.find((item) => item.id === holidayId);
+  if (!holiday) return sendJson(res, 404, { code: 'HOLIDAY_NOT_FOUND', message: 'Holiday was not found.' });
+  const updated = normalizeHoliday({ ...holiday, ...(body || {}) });
+  if (!updated) return sendJson(res, 400, { code: 'INVALID_HOLIDAY', message: 'A valid dateKey (YYYY-MM-DD) is required.' });
+  const duplicate = db.settings.holidays.find((item) => item.id !== holidayId && item.dateKey === updated.dateKey && item.active !== false);
+  if (duplicate) return sendJson(res, 409, { code: 'DUPLICATE_HOLIDAY', message: `${updated.dateKey} is already a holiday.` });
+  Object.assign(holiday, updated, { id: holiday.id, createdAt: holiday.createdAt, updatedAt: nowIso() });
+  saveDb(db);
+  sendJson(res, 200, { holiday });
+}
+
+function handleDeleteHoliday(res, holidayId) {
+  const db = loadDb();
+  const index = db.settings.holidays.findIndex((item) => item.id === holidayId);
+  if (index < 0) return sendJson(res, 404, { code: 'HOLIDAY_NOT_FOUND', message: 'Holiday was not found.' });
+  db.settings.holidays.splice(index, 1);
+  saveDb(db);
+  sendJson(res, 200, { ok: true });
+}
+
 function requireEmployee(db, employeeId) {
   return db.employees.find((employee) => employee.id === String(employeeId || '')) || null;
 }
@@ -1378,6 +1553,7 @@ async function handleCreateLeaveRequest(res, body, actor) {
   if (!dateKeyToUtcDate(fromDate) || !dateKeyToUtcDate(toDate) || fromDate > toDate) return sendJson(res, 400, { code: 'INVALID_DATE_RANGE', message: 'Enter a valid leave date range.' });
   const request = { id: createId('leave'), employeeId: employee.id, employeeName: employee.fullName, leaveType: upperDisplayText(body.leaveType || 'VACATION', 32), fromDate, toDate, reason: cleanDisplayText(body.reason || '', 240), status: 'PENDING', requestedBy: actor.username, reviewedBy: '', reviewedAt: null, createdAt: nowIso(), updatedAt: nowIso() };
   db.leaveRequests.unshift(request); createNotification(db, { employeeId: employee.id, type: 'LEAVE', title: 'Leave request submitted', message: `${fromDate} to ${toDate} is pending review.` }); saveDb(db);
+  broadcastSse('leave_request', { requestId: request.id, employeeId: employee.id, fromDate, toDate, status: 'PENDING' });
   sendJson(res, 201, { leaveRequest: request });
 }
 
@@ -1387,6 +1563,7 @@ async function handleCreateCorrectionRequest(res, body, actor) {
   if (!dateKeyToUtcDate(dateKey)) return sendJson(res, 400, { code: 'INVALID_DATE', message: 'Enter a valid attendance date.' });
   const request = { id: createId('correction'), employeeId: employee.id, employeeName: employee.fullName, dateKey, requestedTimeIn: validTimeText(body.requestedTimeIn, ''), requestedTimeOut: validTimeText(body.requestedTimeOut, ''), reason: cleanDisplayText(body.reason || '', 240), status: 'PENDING', requestedBy: actor.username, reviewedBy: '', reviewedAt: null, createdAt: nowIso(), updatedAt: nowIso() };
   db.correctionRequests.unshift(request); createNotification(db, { employeeId: employee.id, type: 'CORRECTION', title: 'Correction request submitted', message: `${dateKey} is pending review.` }); saveDb(db);
+  broadcastSse('correction_request', { requestId: request.id, employeeId: employee.id, dateKey, status: 'PENDING' });
   sendJson(res, 201, { correctionRequest: request });
 }
 
@@ -1398,6 +1575,7 @@ async function handleReviewWorkflow(res, collection, requestId, body, actor) {
   request.status = status; request.reviewRemarks = cleanDisplayText(body.remarks || '', 240); request.reviewedBy = actor.username; request.reviewedAt = nowIso(); request.updatedAt = request.reviewedAt;
   const label = collection === 'leaveRequests' ? 'Leave' : 'Correction';
   createNotification(db, { employeeId: request.employeeId, type: label.toUpperCase(), title: `${label} request ${status.toLowerCase()}`, message: request.reviewRemarks || `Your request is now ${status.toLowerCase()}.` }); saveDb(db);
+  broadcastSse('workflow_review', { collection, requestId: request.id, employeeId: request.employeeId, status });
   sendJson(res, 200, { request });
 }
 
@@ -1493,6 +1671,18 @@ function buildRecordDeviceDisplay(record, employee) {
       color: 'GREEN',
       beep: 'NOTICE',
       durationMs: Math.max(durationMs, 5000)
+    });
+  }
+
+  if (record.punctuality === 'HOLIDAY') {
+    return normalizeDeviceDisplay({
+      title: 'HOLIDAY',
+      line1: name,
+      line2: record.statusText || 'HOLIDAY',
+      line3: record.attendanceType || '',
+      color: 'PURPLE',
+      beep: 'NOTICE',
+      durationMs: Math.max(durationMs, 4000)
     });
   }
 
@@ -1754,6 +1944,7 @@ async function handleHeartbeat(req, res, body) {
   reader.attendanceCloseStatus = buildAttendanceCloseStatus(db);
 
   saveDb(db);
+  broadcastSse('reader_heartbeat', { deviceId: reader.deviceId, online: reader.online, pendingOfflineLogs: reader.pendingOfflineLogs });
   sendJson(res, 200, {
     accepted: true,
     code: 'READER_ONLINE',
@@ -1918,6 +2109,7 @@ async function handleEnrollmentRequest(req, res, body) {
   }
 
   saveDb(db);
+  broadcastSse('enrollment_request', { requestId: request.id, fingerprintId: request.fingerprintId, deviceId: request.deviceId || '' });
   sendJson(res, 200, {
     accepted: true,
     code: 'ENROLLMENT_REQUEST_CREATED',
@@ -1988,14 +2180,14 @@ async function handleScan(req, res, body) {
   let attendanceType = 'TIME_IN';
   let code = 'TIME_IN_RECORDED';
   let message = 'Time in recorded.';
-  let status = computeTimeInStatus(employee, scanDate);
+  let status = computeTimeInStatus(employee, scanDate, db.settings);
   let extraRecordFields = {};
 
   if (hasTimeIn && !hasTimeOut) {
     attendanceType = 'TIME_OUT';
     code = 'TIME_OUT_RECORDED';
     message = 'Time out recorded.';
-    status = computeTimeOutStatus(employee, scanDate);
+    status = computeTimeOutStatus(employee, scanDate, db.settings);
 
     const work = calculateWorkSummary(timeInRecord ? new Date(timeInRecord.scannedAt) : null, scanDate, db.settings);
     const requiredMinutes = Math.round(Number(db.settings.requiredPaidHours || 8) * 60);
@@ -2060,6 +2252,7 @@ async function handleScan(req, res, body) {
   if (isRecordedAttendanceLog(record)) {
     db.attendance.unshift(record);
     saveDb(db);
+    broadcastSse('attendance', { record, employee: employee ? { id: employee.id, fullName: employee.fullName } : null });
   }
   sendJson(res, 200, buildScanResponse(record, employee));
 }
@@ -2388,6 +2581,21 @@ async function handleUpdateEmployee(res, employeeId, body) {
   sendJson(res, 200, { employee: safePublicEmployee(employee) });
 }
 
+async function handleDeleteEmployee(res, employeeId) {
+  const db = loadDb();
+  const index = db.employees.findIndex((item) => item.id === employeeId);
+  if (index < 0) return sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee not found.' });
+  db.employees.splice(index, 1);
+  db.attendance = db.attendance.filter((record) => record.employeeId !== employeeId);
+  db.leaveRequests = db.leaveRequests.filter((request) => request.employeeId !== employeeId);
+  db.correctionRequests = db.correctionRequests.filter((request) => request.employeeId !== employeeId);
+  db.manualStatuses = db.manualStatuses.filter((item) => item.employeeId !== employeeId);
+  const account = db.employeeAccounts.find((item) => item.employeeId === employeeId);
+  if (account) { account.active = false; account.employeeId = ''; }
+  saveDb(db);
+  sendJson(res, 200, { ok: true });
+}
+
 async function handleAddEmployeeFingerprint(res, employeeId, body) {
   const db = loadDb();
   const employee = db.employees.find((item) => item.id === employeeId && item.active !== false);
@@ -2533,6 +2741,7 @@ function workDurationText(timeInRecord, timeOutRecord) {
 
 function buildTimeCardRecord(employee, dateKey, records, manualStatuses = [], settings = defaultSettings()) {
   const schedule = getScheduleForDate(employee, dateKey);
+  const holiday = findHolidayForDate(settings, dateKey);
   const validRecords = records
     .filter((record) => record.employeeId === employee.id && record.dateKey === dateKey && record.accepted === true && record.code !== 'DUPLICATE_SCAN')
     .sort((a, b) => new Date(a.scannedAt) - new Date(b.scannedAt));
@@ -2557,6 +2766,10 @@ function buildTimeCardRecord(employee, dateKey, records, manualStatuses = [], se
     status = manual.status.replaceAll('_', ' ');
     reason = manual.reason || status;
     statusClass = manual.status === 'ABSENT' ? 'bad' : 'good';
+  } else if (holiday) {
+    status = holiday.name || 'HOLIDAY';
+    statusClass = 'muted';
+    reason = holiday.type || 'HOLIDAY';
   } else if (schedule.dayOff && !timeIn && !timeOut) {
     status = 'DAY OFF';
     statusClass = 'muted';
@@ -2846,7 +3059,7 @@ async function handleEmergencyAttendance(res, body) {
     return;
   }
 
-  const status = type === 'TIME_IN' ? computeTimeInStatus(employee, scanDate) : computeTimeOutStatus(employee, scanDate);
+  const status = type === 'TIME_IN' ? computeTimeInStatus(employee, scanDate, db.settings) : computeTimeOutStatus(employee, scanDate, db.settings);
   const record = createAttendanceRecord({
     fingerprintId: employee.fingerprintId,
     scannedAt: scanDate.toISOString(),
@@ -2907,7 +3120,7 @@ async function handleEditAttendanceRecord(res, recordId, body, actor) {
   if (!['TIME_IN', 'TIME_OUT'].includes(type)) return sendJson(res, 400, { code: 'INVALID_ATTENDANCE_TYPE', message: 'Attendance type must be TIME_IN or TIME_OUT.' });
   const scanDate = new Date(body.scannedAt || record.scannedAt);
   if (Number.isNaN(scanDate.getTime())) return sendJson(res, 400, { code: 'INVALID_SCAN_TIME', message: 'Enter a valid attendance date and time.' });
-  const status = type === 'TIME_IN' ? computeTimeInStatus(employee, scanDate) : computeTimeOutStatus(employee, scanDate);
+  const status = type === 'TIME_IN' ? computeTimeInStatus(employee, scanDate, db.settings) : computeTimeOutStatus(employee, scanDate, db.settings);
   Object.assign(record, {
     attendanceType: type,
     type,
@@ -3140,7 +3353,10 @@ async function handleBindOwnPhone(req, res) {
 
 function handleAuthLogout(req, res) {
   const token = parseCookies(req).gms_session;
-  if (token) sessions.delete(token);
+  if (token) {
+    sessions.delete(token);
+    persistSessions();
+  }
   res.setHeader('Set-Cookie', 'gms_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
   sendJson(res, 200, { ok: true });
 }
@@ -3229,6 +3445,24 @@ async function handleRequest(req, res) {
 
     if (method === 'POST' && pathname === '/api/settings') {
       await handleUpdateSettings(res, await readBody(req));
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/holidays') {
+      handleGetHolidays(res);
+      return;
+    }
+    if (method === 'POST' && pathname === '/api/holidays') {
+      await handleCreateHoliday(res, await readBody(req));
+      return;
+    }
+    const holidayMatch = pathname.match(/^\/api\/holidays\/([^/]+)$/);
+    if (holidayMatch && method === 'PATCH') {
+      await handleUpdateHoliday(res, decodeURIComponent(holidayMatch[1]), await readBody(req));
+      return;
+    }
+    if (holidayMatch && method === 'DELETE') {
+      await handleDeleteHoliday(res, decodeURIComponent(holidayMatch[1]));
       return;
     }
 
@@ -3430,6 +3664,12 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (method === 'DELETE' && pathname.startsWith('/api/employees/') && !pathname.includes('/fingerprints')) {
+      const employeeId = decodeURIComponent(pathname.replace('/api/employees/', ''));
+      await handleDeleteEmployee(res, employeeId);
+      return;
+    }
+
     if (method === 'PATCH' && pathname.startsWith('/api/employees/')) {
       const employeeId = decodeURIComponent(pathname.replace('/api/employees/', ''));
       await handleUpdateEmployee(res, employeeId, await readBody(req));
@@ -3459,6 +3699,69 @@ async function handleRequest(req, res) {
       db.enrollmentRequests = [];
       saveDb(db);
       sendJson(res, 200, { ok: true, deleted });
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/events') {
+      const session = validSession(req);
+      if (!session) return sendJson(res, 401, { code: 'AUTH_REQUIRED', message: 'Authentication is required for real-time updates.' });
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': allowedOrigin(req) || '*'
+      });
+      sseClients.add(res);
+      req.on('close', () => sseClients.delete(res));
+      res.write(': connected\n\n');
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/notifications/send-email') {
+      const db = loadDb();
+      const employeeId = String(body.employeeId || '');
+      const employee = requireEmployee(db, employeeId);
+      if (!employee || !employee.email) return sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee or email not found.' });
+      const title = cleanDisplayText(body.title || 'Attendance Notification', 80);
+      const message = cleanDisplayText(body.message || '', 240);
+      notifyEmployee(db, employeeId, title, message, 'EMAIL');
+      saveDb(db);
+      const sent = await sendEmailNotification(employee.email, title, message);
+      sendJson(res, 200, { ok: true, message: sent ? 'Email sent.' : 'Email queued (SMTP not configured).', sent });
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/notifications/send-sms') {
+      const db = loadDb();
+      const employeeId = String(body.employeeId || '');
+      const employee = requireEmployee(db, employeeId);
+      const account = db.employeeAccounts.find((item) => item.employeeId === employeeId);
+      const phone = account?.phone || employee?.phone || '';
+      if (!employee || !phone) return sendJson(res, 404, { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee or phone number not found.' });
+      const title = cleanDisplayText(body.title || 'Attendance Notification', 80);
+      const message = cleanDisplayText(body.message || '', 240);
+      notifyEmployee(db, employeeId, title, message, 'SMS');
+      saveDb(db);
+      const sent = await sendSmsNotification(phone, `${title}: ${message}`);
+      sendJson(res, 200, { ok: true, message: sent ? 'SMS sent.' : 'SMS queued (Twilio not configured).', sent });
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/notifications/broadcast') {
+      const db = loadDb();
+      const title = cleanDisplayText(body.title || 'Attendance Notification', 80);
+      const message = cleanDisplayText(body.message || '', 240);
+      const targetRole = String(body.role || '').toLowerCase();
+      const targets = targetRole ? db.employeeAccounts.filter((item) => item.active !== false && item.role === targetRole) : db.employeeAccounts.filter((item) => item.active !== false);
+      const notified = [];
+      for (const account of targets) {
+        if (account.employeeId) {
+          notifyEmployee(db, account.employeeId, title, message, 'BROADCAST');
+          notified.push(account.employeeId);
+        }
+      }
+      saveDb(db);
+      sendJson(res, 200, { ok: true, notifiedCount: notified.length, notified });
       return;
     }
 
@@ -3530,11 +3833,19 @@ async function shutdown() {
 }
 
 if (require.main === module) {
+  loadPersistedSessions();
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
   const cleanupTimer = setInterval(() => {
     const now = Date.now();
-    for (const [token, session] of sessions) if (session.expiresAt <= now) sessions.delete(token);
+    let sessionsChanged = false;
+    for (const [token, session] of sessions) {
+      if (session.expiresAt <= now) {
+        sessions.delete(token);
+        sessionsChanged = true;
+      }
+    }
+    if (sessionsChanged) persistSessions();
     for (const [key, bucket] of rateBuckets) if (bucket.resetAt <= now) rateBuckets.delete(key);
   }, 10 * 60 * 1000);
   cleanupTimer.unref();

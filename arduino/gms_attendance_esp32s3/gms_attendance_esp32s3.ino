@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <WiFiUdp.h>
 #include <Wire.h>
 #include <FS.h>
 #include <LittleFS.h>
@@ -16,25 +17,68 @@
 #include <esp_task_wdt.h>
 #include <esp_idf_version.h>
 #include <Preferences.h>
+#include <ESPmDNS.h>
+#include <WebServer.h>
+#include <ArduinoOTA.h>
 
-// =====================================================
-// ESP32-S3 R503 ATTENDANCE FIRMWARE - PROFESSIONAL OLED + OFFLINE SYNC
-//
-// NFC tag/card scanning is intentionally removed.
-// Attendance is triggered only by an R503 fingerprint
-// template match. The server maps fingerprintId to the
-// employee profile and applies the Time In/Time Out rules.
-// =====================================================
+#if defined(__has_include)
+  #if __has_include(<PubSubClient.h>)
+    #include <PubSubClient.h>
+    #define GMS_MQTT_LIBRARY_AVAILABLE 1
+  #else
+    #define GMS_MQTT_LIBRARY_AVAILABLE 0
+  #endif
+#else
+  #define GMS_MQTT_LIBRARY_AVAILABLE 0
+#endif
 
-// =====================================================
-// CONFIGURATION - change before uploading if needed
-// =====================================================
+const char* WIFI_SSID = "HUAWEI-2.4G-uV3h";
+const char* WIFI_PASSWORD = "ZgE8mvHe";
+String wifiSsid = WIFI_SSID;
+String wifiPassword = WIFI_PASSWORD;
 
-#include "secrets.h"
 
+String serverUrl = "http://192.168.100.61:3000";
+String cloudApiUrl = "https://cloudattendance.onrender.com/api/attendance/scan";
+const char* API_KEY = "GMS-ATTENDANCE-KEY-2026";
+String deviceId = "ATTENDANCE-DEVICE-01";
+String deviceLocation = "MAIN-ENTRANCE";
+
+// Remote-management and discovery defaults. Every value can be changed later
+// through Preferences, Serial CONFIG SET commands, or the Web Admin page.
+String mdnsServerHost = "gms-attendance";
+String otaPassword = "GMS-OTA-2026";
+String webAdminUsername = "admin";
+String webAdminPassword = "GMS-ADMIN-2026";
+bool webAdminEnabled = true;
+bool otaEnabled = true;
+
+bool mqttEnabled = false;
+String mqttHost = "";
+uint16_t mqttPort = 1883;
+String mqttUsername = "";
+String mqttPassword = "";
+String mqttTopicPrefix = "gms/attendance";
 
 const char* FIRMWARE_VERSION =
-    "5.1.0-local-cloud-failover";
+    "6.0.3-sd-diagnostics";
+
+// SCAN BREATHING ANIMATION LEGEND (R503 Aura):
+// PURPLE breathing = finger detected / image capture starting.
+// BLUE breathing   = fingerprint image captured / converting.
+// PURPLE breathing = searching R503 template memory.
+// GREEN breathing  = template match confirmed / preparing record.
+// CYAN breathing   = sending attendance to server.
+// YELLOW breathing = saving attendance to offline storage.
+// Final accepted/denied/duplicate results still use flashes for clarity.
+
+// IDLE CONNECTION COLOR LEGEND (external RGB + R503 Aura):
+// RED breathing    = Wi-Fi disconnected; scans save offline.
+// YELLOW breathing = Wi-Fi connected, but local/cloud server unavailable.
+// GREEN breathing  = local attendance server connected.
+// CYAN breathing   = cloud attendance server connected.
+// Scan flow keeps its original colors: purple detect/match, blue capture,
+// green accepted, yellow offline/pending, red error, cyan API/sync.
 
 // =====================================================
 // GPIO CONFIGURATION
@@ -97,12 +141,20 @@ constexpr unsigned long WIFI_RETRY_INTERVAL_MS = 5000;
 constexpr unsigned long WIFI_RETRY_MAX_INTERVAL_MS = 120000;
 constexpr unsigned long SYNC_INTERVAL_MS = 15000;
 constexpr unsigned long HEARTBEAT_INTERVAL_MS = 10000;
+// When both servers are unavailable, probe less often so fingerprint scanning
+// remains responsive and the terminal does not spend most of its time in HTTP.
+// Re-check an unavailable local/cloud server every 10 seconds. This keeps
+// recovery responsive without making HTTP retries dominate fingerprint polling.
+constexpr unsigned long DISCONNECTED_HEARTBEAT_INTERVAL_MS = 10000;
 constexpr unsigned long DISPLAY_COMMAND_INTERVAL_MS = 2500;
 constexpr unsigned long DUPLICATE_FINGER_DELAY_MS = 3000;
 constexpr unsigned long READY_RESTORE_DELAY_MS = 2500;
 constexpr unsigned long FINGER_REMOVE_TIMEOUT_MS = 5000;
-constexpr uint16_t HEARTBEAT_HTTP_TIMEOUT_MS = 8000;
-constexpr uint16_t API_HTTP_TIMEOUT_MS = 8000;
+constexpr uint16_t HEARTBEAT_HTTP_TIMEOUT_MS = 1500;
+constexpr uint16_t API_HTTP_TIMEOUT_MS = 2500;
+// Live scan-status and display-command requests are optional. Keep them short
+// so a dead server cannot freeze the physical fingerprint workflow.
+constexpr uint16_t AUXILIARY_HTTP_TIMEOUT_MS = 600;
 constexpr unsigned long OLED_SLEEP_TIMEOUT_MS = 60000;
 constexpr unsigned long FINGERPRINT_POLL_INTERVAL_MS = 55;
 constexpr unsigned long FINGERPRINT_RECOVERY_INTERVAL_MS = 30000;
@@ -118,11 +170,39 @@ const char* PENDING_FILE = "/pending.ndjson";
 const char* TEMP_FILE = "/pending.tmp";
 const char* BACKUP_FILE = "/pending.bak";
 
-// Enrollment notification queue.
-// Used when the fingerprint template is saved in R503 but the server is unavailable.
 const char* ENROLL_PENDING_FILE = "/enroll_pending.ndjson";
 const char* ENROLL_TEMP_FILE = "/enroll_pending.tmp";
 const char* ENROLL_BACKUP_FILE = "/enroll_pending.bak";
+
+const char* EMPLOYEE_CACHE_FILE = "/employee_cache.json";
+
+constexpr unsigned long NTP_SYNC_INTERVAL_MS = 21600000;
+constexpr unsigned long NTP_QUERY_TIMEOUT_MS = 5000;
+constexpr uint16_t NTP_SERVER_PORT = 123;
+constexpr uint16_t NTP_LOCAL_PORT = 2390;
+constexpr float NTP_DRIFT_THRESHOLD_SECONDS = 2.0f;
+const char* NTP_SERVER_PRIMARY = "pool.ntp.org";
+const char* NTP_SERVER_SECONDARY = "time.google.com";
+
+constexpr unsigned long MDNS_UPDATE_INTERVAL_MS = 60000;
+constexpr unsigned long MDNS_DISCOVERY_INTERVAL_MS = 60000;
+constexpr uint32_t MDNS_QUERY_TIMEOUT_MS = 1500;
+constexpr int32_t LOCAL_TIME_UTC_OFFSET_SECONDS = 8 * 60 * 60;
+
+constexpr uint16_t WEB_ADMIN_PORT = 80;
+constexpr uint16_t OTA_PORT = 3232;
+constexpr unsigned long REMOTE_SERVICE_RETRY_MS = 5000;
+
+constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 15000;
+constexpr unsigned long MQTT_TELEMETRY_INTERVAL_MS = 30000;
+
+// Independent anti-spam protection. The original 3-second duplicate-finger
+// guard remains, while this table blocks the same template for 10 seconds.
+constexpr unsigned long PER_FINGERPRINT_COOLDOWN_MS = 4500;
+constexpr uint8_t FINGERPRINT_COOLDOWN_SLOTS = 32;
+
+constexpr unsigned long CONFIG_SAVE_DEBOUNCE_MS = 5000;
+constexpr uint16_t SERIAL_COMMAND_BUFFER_SIZE = 256;
 
 // =====================================================
 // HARDWARE OBJECTS
@@ -141,6 +221,14 @@ Adafruit_SH1106G display = Adafruit_SH1106G(
   OLED_RESET_PIN
 );
 
+WebServer webServer(WEB_ADMIN_PORT);
+WiFiClient mqttNetworkClient;
+#if GMS_MQTT_LIBRARY_AVAILABLE
+PubSubClient mqttClient(mqttNetworkClient);
+#endif
+
+struct ApiResponse;
+
 String formatDisplayTime(const DateTime& dateTime);
 int firstAvailableFingerprintId();
 uint8_t enrollFingerprint(uint16_t id);
@@ -151,6 +239,36 @@ void wakeOled(bool restartIdleTimer = true);
 void maintainOledProtection();
 void maintainFingerprintRecovery();
 void showSystemError(const char* component, const char* detail, const char* code);
+bool syncRtcWithNtp();
+bool queryNtpServer(const char* ntpServer, DateTime& ntpTime);
+float calculateRtcDrift(const DateTime& rtcTime, const DateTime& ntpTime);
+void applyDeviceConfig();
+void saveConfigIfDirty();
+String getEmployeeName(uint16_t fingerprintId);
+String cachedNameOrUnknown(uint16_t fingerprintId);
+String normalizeMdnsHostname(String value);
+void startMdns();
+void stopMdns();
+void startWebAdmin();
+void stopWebAdmin();
+void startOtaService();
+void stopOtaService();
+void cacheEmployeeName(uint16_t fingerprintId, const String& fullName);
+void loadEmployeeCache();
+void showApiFeedback(const ApiResponse& response, const DateTime& scanTime, uint16_t fingerprintId = 0);
+void handleSerialCommands();
+String effectiveLocalServerUrl();
+String deviceMdnsHostname();
+bool discoverAttendanceServer(bool force = false);
+void setupWebAdminRoutes();
+void maintainWebAdmin();
+void maintainPendingWebActions();
+void maintainOtaService();
+void maintainMqtt();
+void maintainRemoteServices();
+void clearOfflineLogs();
+void publishMqttScanEvent(uint16_t fingerprintId, uint16_t confidence, const String& resultCode, const String& fullName);
+bool updateConfigSetting(const String& rawKey, const String& rawValue, String& resultMessage);
 
 // =====================================================
 // RESPONSE MODEL
@@ -197,6 +315,7 @@ enum class DeviceState : uint8_t {
   SUCCESS,
   ERROR,
   OFFLINE,
+  ONLINE_DISCONNECTED,
   SYNCING
 };
 
@@ -214,12 +333,15 @@ unsigned long lastFingerprintReadTime = 0;
 
 bool feedbackActive = false;
 bool syncInProgress = false;
+// Set when a scan is stored offline or when connectivity is restored.
+// The loop gives this replay priority before polling display commands.
+bool pendingSyncRequested = false;
 bool fingerprintReady = false;
 bool oledReady = false;
 bool rtcReady = false;
 bool wasWiFiConnected = false;
 bool serverReachable = false;
-String activeApiUrl = String(SERVER_URL) + "/api/attendance/scan";
+String activeApiUrl = String(serverUrl) + "/api/attendance/scan";
 bool activeServerIsLocal = true;
 unsigned long lastLocalServerProbeAt = 0;
 int lastServerStatusCode = 0;
@@ -241,6 +363,48 @@ bool idleCloseStatusActive = false;
 String idleCloseStatusColor = "BLUE";
 String idleCloseStatusCode = "WORK_HOURS";
 uint16_t idleOpenTimeOutCount = 0;
+
+WiFiUDP ntpUdp;
+unsigned long lastNtpSyncAt = 0;
+bool ntpSynced = false;
+float ntpDriftSeconds = 0.0f;
+unsigned long lastMdnsAdvertisedAt = 0;
+bool mdnsActive = false;
+String resolvedServerHost = "";
+uint16_t resolvedServerPort = 3000;
+unsigned long lastConfigSaveAt = 0;
+String pendingServerUrl = "";
+String pendingCloudUrl = "";
+String pendingDeviceId = "";
+String pendingDeviceLocation = "";
+String pendingWifiSsid = "";
+String pendingWifiPassword = "";
+bool configDirty = false;
+String serialCommandBuffer = "";
+
+String discoveredServerUrl = "";
+unsigned long lastMdnsDiscoveryAt = 0;
+
+bool webRoutesConfigured = false;
+bool webAdminStarted = false;
+bool otaStarted = false;
+bool remoteServicesRestartRequested = false;
+unsigned long lastRemoteServiceAttemptAt = 0;
+
+int pendingWebEnrollmentId = 0;  // -1 = automatic first available ID
+bool restartRequested = false;
+unsigned long restartRequestedAt = 0;
+bool wifiReconnectRequested = false;
+unsigned long wifiReconnectRequestedAt = 0;
+
+unsigned long lastMqttReconnectAt = 0;
+unsigned long lastMqttTelemetryAt = 0;
+
+struct FingerprintCooldownEntry {
+  uint16_t fingerprintId = 0;
+  unsigned long recordedAt = 0;
+};
+FingerprintCooldownEntry fingerprintCooldowns[FINGERPRINT_COOLDOWN_SLOTS];
 
 // =====================================================
 // OLED DISPLAY
@@ -344,7 +508,8 @@ void showIdleOled() {
 
   const DateTime now = rtc.now();
   const String timeText = formatDisplayTime(now);
-  const String frameKey = connectionStatusTitle() + '|' + timeText + "|SCAN FINGERPRINT";
+  const String detailText = connectionDetailLine();
+  const String frameKey = connectionStatusTitle() + '|' + timeText + '|' + detailText + "|SCAN FINGERPRINT";
   if (frameKey == lastOledFrameKey) return;
   lastOledFrameKey = frameKey;
 
@@ -359,11 +524,15 @@ void showIdleOled() {
 
   // Middle: big clock. This is the normal idle screen.
   display.setTextSize(2);
-  display.setCursor(12, 22);
+  display.setCursor(12, 18);
   display.print(timeText);
 
-  // Bottom: simple instruction only.
+  // Connection detail makes ONLINE DISCONNECTED visible even while idle.
   display.setTextSize(1);
+  display.setCursor(0, 40);
+  display.print(fitOledLine(detailText));
+
+  // Bottom: scanning remains available in every connection state.
   display.setCursor(0, 54);
   display.print("SCAN FINGERPRINT");
 
@@ -734,18 +903,37 @@ void resetIdleCloseStatus() {
 }
 
 void applyIdleReadyColor() {
-  if (idleCloseStatusActive) {
-    applyDeviceColor(idleCloseStatusColor);
-    // Keep the fingerprint reader recognizable as ready without holding
-    // the Aura ring at steady full brightness.
-    r503BlueBreathing();
+  // Red breathing: no Wi-Fi. Fingerprint attendance still saves offline.
+  if (WiFi.status() != WL_CONNECTED) {
+    setRgb(true, false, false);
+    r503RedBreathing();
     return;
   }
 
-  setRgb(false, false, true);
-  // R503 exposes animation speed, not a true brightness percentage.
-  // Breathing blue lowers average output while preserving the ready cue.
-  r503BlueBreathing();
+  // Yellow breathing: Wi-Fi exists, but neither local nor cloud API responds.
+  if (!serverReachable) {
+    setRgb(true, true, false);
+    r503YellowBreathing();
+    return;
+  }
+
+  // A server-provided after-hours/close status may override normal connected
+  // colors. Do not overwrite the R503 Aura color with blue afterward.
+  if (idleCloseStatusActive) {
+    applyDeviceColor(idleCloseStatusColor);
+    return;
+  }
+
+  if (activeServerIsLocal) {
+    // Green breathing: connected to the local LAN server.
+    setRgb(false, true, false);
+    r503GreenBreathing();
+    return;
+  }
+
+  // Cyan breathing: connected through the cloud server.
+  setRgb(false, true, true);
+  r503CyanBreathing();
 }
 
 void playDeviceBeep(const String& beepText) {
@@ -855,11 +1043,17 @@ void r503ShowSingleColorIndex(uint8_t colorIndex) {
 }
 
 void showReadyFeedback() {
-  // Idle uses breathing blue instead of a steady full-brightness Aura ring.
-  applyIdleReadyColor();
-
   feedbackActive = false;
-  deviceState = WiFi.status() == WL_CONNECTED ? DeviceState::IDLE : DeviceState::OFFLINE;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    deviceState = DeviceState::OFFLINE;
+  } else if (!serverReachable) {
+    deviceState = DeviceState::ONLINE_DISCONNECTED;
+  } else {
+    deviceState = DeviceState::IDLE;
+  }
+
+  applyIdleReadyColor();
   wakeOled(true);
   lastIdleOledRefresh = millis();
   showIdleOled();
@@ -885,18 +1079,23 @@ void showProcessingFeedback() {
   Serial.println("[DEVICE] Processing fingerprint...");
 }
 
-void showOfflineFeedback() {
+void showOfflineFeedback(uint16_t fingerprintId = 0) {
   deviceState = DeviceState::OFFLINE;
   setRgb(true, true, false);
   r503YellowFlash();
   beepOffline();
   beginFeedback();
 
+  String employeeName = "";
+  if (fingerprintId > 0) {
+    employeeName = cachedNameOrUnknown(fingerprintId);
+  }
+
   showLiveScanStage(
     "OFFLINE MODE",
+    employeeName,
     "Attendance Saved",
-    "Syncing Later",
-    "CODE: API-01"
+    "Syncing Later"
   );
 
   Serial.println(
@@ -1000,7 +1199,7 @@ String createEventId(const DateTime& dateTime) {
     static_cast<unsigned long>(esp_random())
   );
 
-  return String(DEVICE_ID)
+  return String(deviceId)
       + "-"
       + String(dateTime.unixtime())
       + "-"
@@ -1018,8 +1217,8 @@ String createFingerprintJson(
   document["eventId"] =
       createEventId(dateTime);
 
-  document["deviceId"] = DEVICE_ID;
-  document["location"] = DEVICE_LOCATION;
+  document["deviceId"] = deviceId;
+  document["location"] = deviceLocation;
 
   document["scannedAt"] =
       formatTimestamp(dateTime);
@@ -1070,8 +1269,8 @@ String createEnrollmentRequestJson(
   document["eventId"] = createEventId(dateTime);
   document["eventType"] = "FINGERPRINT_ENROLLMENT_REQUEST";
 
-  document["deviceId"] = DEVICE_ID;
-  document["location"] = DEVICE_LOCATION;
+  document["deviceId"] = deviceId;
+  document["location"] = deviceLocation;
   document["source"] = "ESP32-S3";
   document["firmwareVersion"] = FIRMWARE_VERSION;
 
@@ -1100,7 +1299,11 @@ String createEnrollmentRequestJson(
 bool useMicroSdStorage = false;
 bool littleFsReady = false;
 bool microSdReady = false;
-String microSdStatus = "Not checked";
+String microSdCode = "SD-00";
+String microSdStatus = "NOT CHECKED";
+String microSdDetail = "Diagnostics have not run yet";
+uint32_t microSdMountedFrequency = 0;
+const char* SD_DIAGNOSTIC_FILE = "/sd_health.tmp";
 
 const char* offlineStorageName() {
   return useMicroSdStorage ? "MicroSD" : "LittleFS";
@@ -1160,14 +1363,14 @@ void showMicroSdFallbackNotice() {
   }
 
   showOledScreen(
-    "SD CARD WARNING",
-    "No card or mount fail",
-    "Using LittleFS backup",
-    "Insert SD then reboot",
+    String("SD ERROR ") + microSdCode,
+    microSdStatus,
+    littleFsReady ? "Using LittleFS" : "NO BACKUP STORAGE",
+    "Type SDTEST in Serial",
     ""
   );
 
-  delay(1200);
+  delay(1800);
 }
 
 bool initializeLittleFsStorage() {
@@ -1200,17 +1403,118 @@ bool initializeLittleFsStorage() {
   return true;
 }
 
-bool initializeMicroSdStorage() {
-  microSdReady = false;
-  useMicroSdStorage = false;
+void setMicroSdDiagnostic(
+    const String& code,
+    const String& status,
+    const String& detail
+) {
+  microSdCode = code;
+  microSdStatus = status;
+  microSdDetail = detail;
 
-  if (!ENABLE_MICROSD) {
-    microSdStatus = "Disabled in firmware";
-    Serial.println("[STORAGE] MicroSD disabled in firmware.");
+  Serial.print("[SD DIAG] ");
+  Serial.print(microSdCode);
+  Serial.print(" ");
+  Serial.println(microSdStatus);
+  Serial.print("[SD DIAG] Detail: ");
+  Serial.println(microSdDetail);
+}
+
+bool verifyMicroSdReadWrite() {
+  const String expected = "GMS_SD_TEST_OK";
+
+  SD.remove(SD_DIAGNOSTIC_FILE);
+
+  File testFile = SD.open(SD_DIAGNOSTIC_FILE, FILE_WRITE);
+  if (!testFile) {
+    setMicroSdDiagnostic(
+      "SD-04",
+      "WRITE OPEN FAILED",
+      "Card may be read-only, full, corrupt, or unstable"
+    );
     return false;
   }
 
-  Serial.println("[STORAGE] Mounting MicroSD over SPI...");
+  const size_t written = testFile.print(expected);
+  testFile.flush();
+  testFile.close();
+
+  if (written != expected.length()) {
+    SD.remove(SD_DIAGNOSTIC_FILE);
+    setMicroSdDiagnostic(
+      "SD-04",
+      "WRITE FAILED",
+      "Card may be full, damaged, read-only, or poorly connected"
+    );
+    return false;
+  }
+
+  testFile = SD.open(SD_DIAGNOSTIC_FILE, FILE_READ);
+  if (!testFile) {
+    SD.remove(SD_DIAGNOSTIC_FILE);
+    setMicroSdDiagnostic(
+      "SD-05",
+      "READ OPEN FAILED",
+      "Card mounted but the test file could not be read back"
+    );
+    return false;
+  }
+
+  String actual = testFile.readString();
+  testFile.close();
+  SD.remove(SD_DIAGNOSTIC_FILE);
+  actual.trim();
+
+  if (actual != expected) {
+    setMicroSdDiagnostic(
+      "SD-05",
+      "VERIFY FAILED",
+      "Read-back mismatch; card or SPI connection is unstable"
+    );
+    return false;
+  }
+
+  return true;
+}
+
+bool tryMountMicroSd(uint32_t frequency) {
+  SD.end();
+  delay(30);
+
+  Serial.print("[SD DIAG] Trying SPI frequency: ");
+  Serial.print(frequency / 1000UL);
+  Serial.println(" kHz");
+
+  if (!SD.begin(SD_CS_PIN, SPI, frequency)) {
+    return false;
+  }
+
+  microSdMountedFrequency = frequency;
+  return true;
+}
+
+bool initializeMicroSdStorage() {
+  microSdReady = false;
+  useMicroSdStorage = false;
+  microSdMountedFrequency = 0;
+
+  if (!ENABLE_MICROSD) {
+    setMicroSdDiagnostic(
+      "SD-00",
+      "DISABLED",
+      "MicroSD support is disabled in firmware"
+    );
+    return false;
+  }
+
+  Serial.println("[STORAGE] Running MicroSD diagnostics over SPI...");
+  Serial.printf(
+    "[SD DIAG] Pins CS=%u SCK=%u MISO=%u MOSI=%u\n",
+    SD_CS_PIN,
+    SD_SCK_PIN,
+    SD_MISO_PIN,
+    SD_MOSI_PIN
+  );
 
   pinMode(SD_CS_PIN, OUTPUT);
   digitalWrite(SD_CS_PIN, HIGH);
@@ -1222,35 +1526,72 @@ bool initializeMicroSdStorage() {
     SD_CS_PIN
   );
 
-  if (!SD.begin(SD_CS_PIN, SPI, SD_SPI_FREQUENCY)) {
-    microSdStatus = "No card or mount failed";
-    Serial.println("[STORAGE] No MicroSD card detected or mount failed.");
-    Serial.println("[STORAGE] Check SD insert, FAT32 format, SPI wiring, and 3.3V power.");
+  const uint32_t diagnosticFrequencies[] = {
+    SD_SPI_FREQUENCY,
+    1000000,
+    400000
+  };
+
+  bool mounted = false;
+  for (uint8_t index = 0; index < 3; index++) {
+    if (tryMountMicroSd(diagnosticFrequencies[index])) {
+      mounted = true;
+      break;
+    }
+  }
+
+  if (!mounted) {
+    setMicroSdDiagnostic(
+      "SD-01",
+      "NO RESPONSE / MOUNT FAILED",
+      "Check card insertion, FAT32, 3.3V, wiring, or SD module"
+    );
     return false;
   }
 
   const uint8_t cardType = SD.cardType();
 
   if (cardType == CARD_NONE) {
-    microSdStatus = "No card detected";
-    Serial.println("[STORAGE] No MicroSD card detected.");
+    SD.end();
+    setMicroSdDiagnostic(
+      "SD-02",
+      "CARD NOT DETECTED",
+      "Slot is responding but no readable card is detected"
+    );
+    return false;
+  }
+
+  const uint64_t cardSizeBytes = SD.cardSize();
+  if (cardSizeBytes == 0) {
+    SD.end();
+    setMicroSdDiagnostic(
+      "SD-03",
+      "INVALID CARD SIZE",
+      "Card is detected but may be damaged or unsupported"
+    );
+    return false;
+  }
+
+  if (!verifyMicroSdReadWrite()) {
+    SD.end();
     return false;
   }
 
   microSdReady = true;
   useMicroSdStorage = true;
-  microSdStatus = String("Ready: ") + microSdCardTypeName(cardType);
 
-  Serial.print("[STORAGE] MicroSD mounted. Type: ");
-  Serial.println(microSdCardTypeName(cardType));
-
-  Serial.print("[STORAGE] MicroSD size MB: ");
-  Serial.println(
-    static_cast<unsigned long>(
-      SD.cardSize() / (1024ULL * 1024ULL)
-    )
+  const unsigned long cardSizeMb = static_cast<unsigned long>(
+    cardSizeBytes / (1024ULL * 1024ULL)
   );
 
+  setMicroSdDiagnostic(
+    "SD-OK",
+    String("READY ") + microSdCardTypeName(cardType),
+    String(cardSizeMb) + " MB, read/write verified at "
+      + String(microSdMountedFrequency / 1000UL) + " kHz"
+  );
+
+  Serial.println("[STORAGE] MicroSD read/write test passed.");
   return true;
 }
 
@@ -1467,22 +1808,31 @@ bool commitEnrollmentQueue(bool hasRemainingRecords) {
 }
 
 // =====================================================
+// LOCAL SERVER ROUTING
+// =====================================================
+
+String effectiveLocalServerUrl() {
+  return discoveredServerUrl.isEmpty() ? serverUrl : discoveredServerUrl;
+}
+
+// =====================================================
 // WI-FI
 // =====================================================
 
 void startWiFiConnection() {
   Serial.println();
   Serial.print("[WIFI] Connecting to 2.4 GHz SSID: ");
-  Serial.println(WIFI_SSID);
+  Serial.println(wifiSsid);
   Serial.println("[WIFI] Ensure this is the 2.4 GHz network; ESP32-S3 cannot use 5 GHz.");
 
+  WiFi.setHostname(deviceMdnsHostname().c_str());
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
 
   WiFi.begin(
-    WIFI_SSID,
-    WIFI_PASSWORD
+    wifiSsid.c_str(),
+    wifiPassword.c_str()
   );
 
   lastWiFiAttempt = millis();
@@ -1494,7 +1844,7 @@ void waitForInitialWiFi() {
   deviceState = DeviceState::OFFLINE;
   showOledScreen("OFFLINE MODE", "WiFi connecting", "Attendance Saved", "Syncing Later", "CODE: WIFI-01");
   Serial.println("[WIFI] Connection continues in background; local scanning is ready.");
-  Serial.printf("[WIFI] Target server: %s\n", String(SERVER_URL).c_str());
+  Serial.printf("[WIFI] Target server: %s\n", effectiveLocalServerUrl().c_str());
 }
 
 void maintainWiFiConnection() {
@@ -1502,19 +1852,22 @@ void maintainWiFiConnection() {
     if (!wasWiFiConnected) {
       wasWiFiConnected = true;
       currentWiFiRetryIntervalMs = WIFI_RETRY_INTERVAL_MS;
+
+      // Wi-Fi being connected does not prove that either API is reachable.
+      // Reset stale server state and force a fresh heartbeat immediately.
+      serverReachable = false;
+      lastServerStatusCode = 0;
+      lastConnectionTitle = "";
+      activeApiUrl = effectiveLocalServerUrl() + "/api/attendance/scan";
+      activeServerIsLocal = true;
+      lastHeartbeatAttempt = millis() - DISCONNECTED_HEARTBEAT_INTERVAL_MS;
+
       Serial.println("[WIFI] Reconnected.");
       Serial.print("[WIFI] IP: ");
       Serial.println(WiFi.localIP());
       Serial.print("[WIFI] RSSI: ");
       Serial.print(WiFi.RSSI());
       Serial.println(" dBm");
-      showOledScreen(
-        "WIFI RECONNECTED",
-        "CHECKING SERVER",
-        "",
-        "",
-        ""
-      );
       showReadyFeedback();
     }
     return;
@@ -1522,7 +1875,10 @@ void maintainWiFiConnection() {
 
   if (wasWiFiConnected) {
     wasWiFiConnected = false;
-    showIdleOled();
+    serverReachable = false;
+    lastServerStatusCode = 0;
+    lastConnectionTitle = "";
+    showReadyFeedback();
   }
 
   if (
@@ -1537,8 +1893,8 @@ void maintainWiFiConnection() {
   WiFi.disconnect();
 
   WiFi.begin(
-    WIFI_SSID,
-    WIFI_PASSWORD
+    wifiSsid.c_str(),
+    wifiPassword.c_str()
   );
 
   lastWiFiAttempt = millis();
@@ -1755,7 +2111,7 @@ bool sendScanToEndpoint(
     "X-API-Key",
     API_KEY
   );
-  http.addHeader("X-Device-ID", DEVICE_ID);
+  http.addHeader("X-Device-ID", deviceId);
 
   showLiveScanStage(
     "RECORDING",
@@ -1818,7 +2174,7 @@ bool checkServerHealth() {
   HTTPClient http;
   http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
 
-  String healthUrl = String(SERVER_URL) + "/api/health";
+  String healthUrl = effectiveLocalServerUrl() + "/api/health";
   if (!beginDeviceHttp(http, plainClient, secureClient, healthUrl)) {
     Serial.println("[HEALTH] HTTP init failed.");
     return false;
@@ -1848,31 +2204,18 @@ bool sendScanToServer(const String& json, ApiResponse& response) {
     return false;
   }
 
-  Serial.println("[API] Trying local attendance server first...");
-  for (int attempt = 1; attempt <= 2; attempt++) {
-    if (attempt > 1) {
-      Serial.printf("[API] Local retry %d/2...\n", attempt);
-      delay(1000);
-    }
-    if (sendScanToEndpoint(String(SERVER_URL) + "/api/attendance/scan", json, response)) {
-      if (millis() - lastLocalServerProbeAt >= LOCAL_SERVER_PROBE_INTERVAL_MS) {
-        lastLocalServerProbeAt = millis();
-      }
-      selectActiveServer(String(SERVER_URL) + "/api/attendance/scan", true);
-      return true;
-    }
+  Serial.println("[API] Trying local attendance server...");
+  const String localScanUrl = effectiveLocalServerUrl() + "/api/attendance/scan";
+  if (sendScanToEndpoint(localScanUrl, json, response)) {
+    lastLocalServerProbeAt = millis();
+    selectActiveServer(localScanUrl, true);
+    return true;
   }
 
-  Serial.println("[API] Local unavailable; trying Render cloud...");
-  for (int attempt = 1; attempt <= 2; attempt++) {
-    if (attempt > 1) {
-      Serial.printf("[API] Cloud retry %d/2...\n", attempt);
-      delay(1000);
-    }
-    if (sendScanToEndpoint(String(CLOUD_API_URL), json, response)) {
-      selectActiveServer(String(CLOUD_API_URL), false);
-      return true;
-    }
+  Serial.println("[API] Local unavailable; trying cloud once...");
+  if (sendScanToEndpoint(String(cloudApiUrl), json, response)) {
+    selectActiveServer(String(cloudApiUrl), false);
+    return true;
   }
 
   serverReachable = false;
@@ -1898,7 +2241,7 @@ String heartbeatUrl() {
 String displayCommandUrl() {
   return apiBaseUrl()
       + "/api/devices/display-command?deviceId="
-      + String(DEVICE_ID);
+      + String(deviceId);
 }
 
 String displayCommandAckUrl() {
@@ -1917,18 +2260,18 @@ String fingerprintScanStatusUrl() {
 void sendFingerprintScanStatus(const String& status) {
   if (WiFi.status() != WL_CONNECTED || !serverReachable) return;
   JsonDocument document;
-  document["deviceId"] = DEVICE_ID;
+  document["deviceId"] = deviceId;
   document["status"] = status;
   String json;
   serializeJson(document, json);
   WiFiClient plainClient;
   WiFiClientSecure secureClient;
   HTTPClient http;
-  http.setTimeout(API_HTTP_TIMEOUT_MS);
+  http.setTimeout(AUXILIARY_HTTP_TIMEOUT_MS);
   if (!beginDeviceHttp(http, plainClient, secureClient, fingerprintScanStatusUrl())) return;
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-Key", API_KEY);
-  http.addHeader("X-Device-ID", DEVICE_ID);
+  http.addHeader("X-Device-ID", deviceId);
   http.POST(json);
   http.end();
 }
@@ -1957,7 +2300,7 @@ bool sendEnrollmentRequestToServer(
 
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-Key", API_KEY);
-  http.addHeader("X-Device-ID", DEVICE_ID);
+  http.addHeader("X-Device-ID", deviceId);
 
   showOledStatus(
     "FINGERPRINT SAVED",
@@ -2042,6 +2385,54 @@ void applyAttendanceCloseStatusFromServer(JsonVariantConst source) {
   Serial.println(idleOpenTimeOutCount);
 }
 
+void cacheEmployeesFromHeartbeat(JsonVariantConst source) {
+  if (source.isNull()) {
+    return;
+  }
+
+  size_t cachedCount = 0;
+
+  if (source.is<JsonArrayConst>()) {
+    for (JsonVariantConst item : source.as<JsonArrayConst>()) {
+      uint16_t fingerprintId = item["fingerprintId"] | 0;
+      if (fingerprintId == 0) fingerprintId = item["id"] | 0;
+      String fullName = String(item["fullName"] | "");
+      if (fullName.isEmpty()) fullName = String(item["name"] | "");
+      fullName.trim();
+
+      if (fingerprintId > 0 && !fullName.isEmpty()) {
+        cacheEmployeeName(fingerprintId, fullName);
+        cachedCount++;
+      }
+    }
+  } else if (source.is<JsonObjectConst>()) {
+    for (JsonPairConst pair : source.as<JsonObjectConst>()) {
+      const uint16_t fingerprintId =
+          static_cast<uint16_t>(String(pair.key().c_str()).toInt());
+      String fullName = "";
+
+      if (pair.value().is<const char*>()) {
+        fullName = String(pair.value().as<const char*>());
+      } else if (pair.value().is<JsonObjectConst>()) {
+        fullName = String(pair.value()["fullName"] | "");
+        if (fullName.isEmpty()) fullName = String(pair.value()["name"] | "");
+      }
+
+      fullName.trim();
+      if (fingerprintId > 0 && !fullName.isEmpty()) {
+        cacheEmployeeName(fingerprintId, fullName);
+        cachedCount++;
+      }
+    }
+  }
+
+  if (cachedCount > 0) {
+    Serial.print("[CACHE] Heartbeat refreshed ");
+    Serial.print(cachedCount);
+    Serial.println(" employee name(s).");
+  }
+}
+
 void parseHeartbeatResponse(const String& responseBody) {
   if (responseBody.isEmpty()) {
     resetIdleCloseStatus();
@@ -2062,9 +2453,16 @@ void parseHeartbeatResponse(const String& responseBody) {
   applyAttendanceCloseStatusFromServer(
     document["attendanceCloseStatus"]
   );
+
+  JsonVariantConst employeeCache = document["employeeCache"];
+  if (employeeCache.isNull()) employeeCache = document["employees"];
+  if (employeeCache.isNull()) employeeCache = document["fingerprints"];
+  cacheEmployeesFromHeartbeat(employeeCache);
 }
 
 void sendReaderHeartbeat() {
+  const bool serverWasReachable = serverReachable;
+
   if (WiFi.status() != WL_CONNECTED) {
     serverReachable = false;
     lastServerStatusCode = 0;
@@ -2073,9 +2471,9 @@ void sendReaderHeartbeat() {
   }
 
   JsonDocument document;
-  document["deviceId"] = DEVICE_ID;
+  document["deviceId"] = deviceId;
   document["source"] = "ESP32-S3";
-  document["location"] = DEVICE_LOCATION;
+  document["location"] = deviceLocation;
   document["firmwareVersion"] = FIRMWARE_VERSION;
   document["identityMode"] = "FINGERPRINT_ONLY";
   document["deviceIp"] =
@@ -2093,6 +2491,16 @@ void sendReaderHeartbeat() {
   capabilities["offlineStorage"] = true;
   capabilities["rgbLed"] = ENABLE_RGB_LED;
   capabilities["buzzer"] = ENABLE_BUZZER;
+  capabilities["ntpRtcCorrection"] = true;
+  capabilities["mdnsDiscovery"] = true;
+  capabilities["preferencesConfig"] = true;
+  capabilities["employeeNameCache"] = true;
+  capabilities["webAdmin"] = webAdminEnabled;
+  capabilities["ota"] = otaEnabled;
+  capabilities["mqtt"] = mqttEnabled && (GMS_MQTT_LIBRARY_AVAILABLE == 1);
+  capabilities["perFingerprintRateLimit"] = true;
+  document["webAdminUrl"] = String("http://") + deviceMdnsHostname() + ".local/";
+  document["discoveredServerUrl"] = discoveredServerUrl;
 
   String json;
   serializeJson(document, json);
@@ -2100,59 +2508,46 @@ void sendReaderHeartbeat() {
   bool sent = false;
   int statusCode = 0;
 
-  activeApiUrl = String(SERVER_URL) + "/api/attendance/scan";
+  activeApiUrl = effectiveLocalServerUrl() + "/api/attendance/scan";
   activeServerIsLocal = true;
-  for (int attempt = 1; attempt <= 2; attempt++) {
-    if (attempt > 1) {
-      Serial.printf("[HEARTBEAT] Local retry %d/2...\n", attempt);
-      delay(1000);
-    }
+  {
     WiFiClient plainClient;
     WiFiClientSecure secureClient;
     HTTPClient http;
     http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
-    if (!beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
+    if (beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
+      http.addHeader("Content-Type", "application/json");
+      http.addHeader("X-API-Key", API_KEY);
+      http.addHeader("X-Device-ID", deviceId);
+      statusCode = http.POST(json);
+      String responseBody = statusCode > 0 ? http.getString() : "";
+      http.end();
+      lastServerStatusCode = statusCode;
+      Serial.print("[HEARTBEAT] Local status: ");
+      Serial.println(statusCode);
+      if (statusCode >= 200 && statusCode < 300) {
+        serverReachable = true;
+        selectActiveServer(activeApiUrl, true);
+        parseHeartbeatResponse(responseBody);
+        sent = true;
+        lastLocalServerProbeAt = millis();
+      }
+    } else {
       Serial.println("[HEARTBEAT] Local HTTP init failed.");
-      continue;
-    }
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("X-API-Key", API_KEY);
-    http.addHeader("X-Device-ID", DEVICE_ID);
-    statusCode = http.POST(json);
-    String responseBody = statusCode > 0 ? http.getString() : "";
-    http.end();
-    lastServerStatusCode = statusCode;
-    Serial.print("[HEARTBEAT] Local status: ");
-    Serial.println(statusCode);
-    if (statusCode >= 200 && statusCode < 300) {
-      serverReachable = true;
-      selectActiveServer(activeApiUrl, true);
-      parseHeartbeatResponse(responseBody);
-      sent = true;
-      lastLocalServerProbeAt = millis();
-      break;
     }
   }
 
   if (!sent) {
-    for (int attempt = 1; attempt <= 2; attempt++) {
-      if (attempt > 1) {
-        Serial.printf("[HEARTBEAT] Cloud retry %d/2...\n", attempt);
-        delay(1000);
-      }
-      activeApiUrl = String(CLOUD_API_URL);
-      activeServerIsLocal = false;
-      WiFiClient plainClient;
-      WiFiClientSecure secureClient;
-      HTTPClient http;
-      http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
-      if (!beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
-        Serial.println("[HEARTBEAT] Cloud HTTP init failed.");
-        continue;
-      }
+    activeApiUrl = String(cloudApiUrl);
+    activeServerIsLocal = false;
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    HTTPClient http;
+    http.setTimeout(HEARTBEAT_HTTP_TIMEOUT_MS);
+    if (beginDeviceHttp(http, plainClient, secureClient, heartbeatUrl())) {
       http.addHeader("Content-Type", "application/json");
       http.addHeader("X-API-Key", API_KEY);
-      http.addHeader("X-Device-ID", DEVICE_ID);
+      http.addHeader("X-Device-ID", deviceId);
       statusCode = http.POST(json);
       String responseBody = statusCode > 0 ? http.getString() : "";
       http.end();
@@ -2164,8 +2559,9 @@ void sendReaderHeartbeat() {
         selectActiveServer(activeApiUrl, false);
         parseHeartbeatResponse(responseBody);
         sent = true;
-        break;
       }
+    } else {
+      Serial.println("[HEARTBEAT] Cloud HTTP init failed.");
     }
   }
 
@@ -2173,6 +2569,16 @@ void sendReaderHeartbeat() {
     serverReachable = false;
     lastServerStatusCode = statusCode;
     resetIdleCloseStatus();
+  } else if (!serverWasReachable) {
+    const size_t pendingTotal =
+        countPendingRecords() + countPendingEnrollmentRequests();
+
+    if (pendingTotal > 0) {
+      pendingSyncRequested = true;
+      Serial.print("[SYNC] Server restored; immediate replay requested for ");
+      Serial.print(pendingTotal);
+      Serial.println(" pending record(s).");
+    }
   }
 
   if (!feedbackActive) {
@@ -2198,7 +2604,7 @@ void acknowledgeDisplayCommand(
   JsonDocument document;
   document["commandId"] = commandId;
   document["command"] = command;
-  document["deviceId"] = DEVICE_ID;
+  document["deviceId"] = deviceId;
   document["status"] = status;
   document["message"] = message;
   document["firmwareVersion"] = FIRMWARE_VERSION;
@@ -2213,7 +2619,7 @@ void acknowledgeDisplayCommand(
   WiFiClient plainClient;
   WiFiClientSecure secureClient;
   HTTPClient http;
-  http.setTimeout(API_HTTP_TIMEOUT_MS);
+  http.setTimeout(AUXILIARY_HTTP_TIMEOUT_MS);
 
   if (!beginDeviceHttp(http, plainClient, secureClient, displayCommandAckUrl())) {
     Serial.println("[COMMAND] ACK HTTP init failed.");
@@ -2222,7 +2628,7 @@ void acknowledgeDisplayCommand(
 
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-Key", API_KEY);
-  http.addHeader("X-Device-ID", DEVICE_ID);
+  http.addHeader("X-Device-ID", deviceId);
 
   const int statusCode = http.POST(json);
   http.end();
@@ -2244,7 +2650,7 @@ void pollDisplayCommand() {
   WiFiClient plainClient;
   WiFiClientSecure secureClient;
   HTTPClient http;
-  http.setTimeout(API_HTTP_TIMEOUT_MS);
+  http.setTimeout(AUXILIARY_HTTP_TIMEOUT_MS);
 
   if (!beginDeviceHttp(http, plainClient, secureClient, displayCommandUrl())) {
     Serial.println("[COMMAND] Display command HTTP init failed.");
@@ -2252,7 +2658,7 @@ void pollDisplayCommand() {
   }
 
   http.addHeader("X-API-Key", API_KEY);
-  http.addHeader("X-Device-ID", DEVICE_ID);
+  http.addHeader("X-Device-ID", deviceId);
 
   const int statusCode = http.GET();
   String responseBody = "";
@@ -2374,18 +2780,1279 @@ void pollDisplayCommand() {
 }
 
 // =====================================================
-// UI-ALIGNED FEEDBACK
+// NTP TIME SYNC
 // =====================================================
 
-String displayNameOrNeedRegister(const ApiResponse& response) {
+bool queryNtpServer(const char* ntpServer, DateTime& ntpTime) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  uint8_t ntpPacket[48] = {0};
+  ntpPacket[0] = 0b11100011;  // LI, Version 4, Client mode
+  ntpPacket[1] = 0;           // Stratum
+  ntpPacket[2] = 6;           // Polling interval
+  ntpPacket[3] = 0xEC;        // Peer clock precision
+  ntpPacket[12] = 49;
+  ntpPacket[13] = 0x4E;
+  ntpPacket[14] = 49;
+  ntpPacket[15] = 52;
+
+  if (!ntpUdp.begin(NTP_LOCAL_PORT)) {
+    Serial.println("[NTP] UDP begin failed.");
+    return false;
+  }
+
+  ntpUdp.beginPacket(ntpServer, NTP_SERVER_PORT);
+  ntpUdp.write(ntpPacket, 48);
+  ntpUdp.endPacket();
+
+  const unsigned long startedAt = millis();
+  while (millis() - startedAt < NTP_QUERY_TIMEOUT_MS) {
+    const int packetSize = ntpUdp.parsePacket();
+    if (packetSize >= 48) {
+      uint8_t packetBuffer[48];
+      ntpUdp.read(packetBuffer, 48);
+
+      const uint32_t secondsSince1900 =
+        ((uint32_t)packetBuffer[40] << 24) |
+        ((uint32_t)packetBuffer[41] << 16) |
+        ((uint32_t)packetBuffer[42] << 8) |
+        (uint32_t)packetBuffer[43];
+
+      const uint32_t secondsSince1970 = secondsSince1900 - 2208988800UL;
+      const uint32_t fraction =
+        ((uint32_t)packetBuffer[44] << 24) |
+        ((uint32_t)packetBuffer[45] << 16) |
+        ((uint32_t)packetBuffer[46] << 8) |
+        (uint32_t)packetBuffer[47];
+
+      const float subSeconds = (float)fraction / 4294967296.0f;
+      const time_t epoch = (time_t)(secondsSince1970 + LOCAL_TIME_UTC_OFFSET_SECONDS + (subSeconds > 0.5f ? 1 : 0));
+      ntpTime = DateTime(epoch);
+      ntpUdp.stop();
+      return true;
+    }
+    delay(50);
+  }
+
+  ntpUdp.stop();
+  return false;
+}
+
+float calculateRtcDrift(const DateTime& rtcTime, const DateTime& ntpTime) {
+  const time_t rtcEpoch = rtcTime.unixtime();
+  const time_t ntpEpoch = ntpTime.unixtime();
+  const float drift = (float)(ntpEpoch - rtcEpoch);
+  return drift > 0 ? drift : -drift;
+}
+
+bool syncRtcWithNtp() {
+  if (WiFi.status() != WL_CONNECTED || !rtcReady) {
+    return false;
+  }
+
+  DateTime ntpTime;
+  bool primaryOk = queryNtpServer(NTP_SERVER_PRIMARY, ntpTime);
+  bool secondaryOk = false;
+
+  if (!primaryOk) {
+    secondaryOk = queryNtpServer(NTP_SERVER_SECONDARY, ntpTime);
+  }
+
+  if (!primaryOk && !secondaryOk) {
+    Serial.println("[NTP] Both NTP servers unreachable.");
+    lastNtpSyncAt = millis() - NTP_SYNC_INTERVAL_MS + 300000;
+    return false;
+  }
+
+  const DateTime rtcTime = rtc.now();
+  ntpDriftSeconds = calculateRtcDrift(rtcTime, ntpTime);
+
+  Serial.print("[NTP] RTC drift: ");
+  Serial.print(ntpDriftSeconds, 1);
+  Serial.println(" seconds.");
+
+  if (ntpDriftSeconds > NTP_DRIFT_THRESHOLD_SECONDS) {
+    rtc.adjust(ntpTime);
+    Serial.print("[NTP] RTC corrected to: ");
+    Serial.println(formatTimestamp(ntpTime));
+  } else {
+    Serial.println("[NTP] RTC drift within tolerance; no adjustment needed.");
+  }
+
+  ntpSynced = true;
+  lastNtpSyncAt = millis();
+  return true;
+}
+
+void maintainNtpSync() {
+  if (
+    WiFi.status() != WL_CONNECTED ||
+    !rtcReady ||
+    millis() - lastNtpSyncAt < NTP_SYNC_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  Serial.println("[NTP] Scheduled sync...");
+  syncRtcWithNtp();
+}
+
+// =====================================================
+// MDNS / DNS-SD DEVICE ADVERTISING + SERVER DISCOVERY
+// =====================================================
+
+String normalizeMdnsHostname(String value) {
+  value.trim();
+  value.toLowerCase();
+
+  String normalized = "";
+  normalized.reserve(32);
+  bool previousWasDash = false;
+
+  for (size_t i = 0; i < value.length() && normalized.length() < 31; i++) {
+    const char character = value.charAt(i);
+    const bool isAlphaNumeric =
+        (character >= 'a' && character <= 'z') ||
+        (character >= '0' && character <= '9');
+
+    if (isAlphaNumeric) {
+      normalized += character;
+      previousWasDash = false;
+    } else if (!previousWasDash && !normalized.isEmpty()) {
+      normalized += '-';
+      previousWasDash = true;
+    }
+  }
+
+  while (normalized.endsWith("-")) {
+    normalized.remove(normalized.length() - 1);
+  }
+
+  if (normalized.isEmpty()) {
+    normalized = "gms-device";
+  }
+
+  return normalized;
+}
+
+String deviceMdnsHostname() {
+  return normalizeMdnsHostname(deviceId);
+}
+
+bool applyDiscoveredServer(
+    const IPAddress& address,
+    uint16_t port,
+    const String& hostname
+) {
+  if (
+    address == IPAddress(0, 0, 0, 0) ||
+    address == WiFi.localIP() ||
+    port == 0
+  ) {
+    return false;
+  }
+
+  const String candidateUrl =
+      String("http://") + address.toString() + ":" + String(port);
+
+  const bool changed = candidateUrl != discoveredServerUrl;
+  discoveredServerUrl = candidateUrl;
+  resolvedServerHost = hostname.isEmpty() ? address.toString() : hostname;
+  resolvedServerPort = port;
+
+  if (changed) {
+    Serial.print("[MDNS] Attendance server discovered: ");
+    Serial.println(discoveredServerUrl);
+    activeApiUrl = discoveredServerUrl + "/api/attendance/scan";
+    activeServerIsLocal = true;
+    serverReachable = false;
+    lastHeartbeatAttempt = millis() - DISCONNECTED_HEARTBEAT_INTERVAL_MS;
+  }
+
+  return true;
+}
+
+bool discoverAttendanceServer(bool force) {
+  if (!WiFi.isConnected() || !mdnsActive) {
+    return false;
+  }
+
+  if (!force && serverReachable && activeServerIsLocal) {
+    return true;
+  }
+
+  if (
+    !force &&
+    millis() - lastMdnsDiscoveryAt < MDNS_DISCOVERY_INTERVAL_MS
+  ) {
+    return !discoveredServerUrl.isEmpty();
+  }
+
+  lastMdnsDiscoveryAt = millis();
+  Serial.println("[MDNS] Searching for attendance server...");
+
+  // Preferred method: the PC/server advertises _attendance._tcp.
+  const int serviceCount = MDNS.queryService("attendance", "tcp");
+  for (int index = 0; index < serviceCount; index++) {
+    const IPAddress serviceIp = MDNS.address(index);
+    const uint16_t servicePort = MDNS.port(index);
+    const String serviceHost = MDNS.hostname(index);
+
+    if (applyDiscoveredServer(serviceIp, servicePort, serviceHost)) {
+      return true;
+    }
+  }
+
+  // Fallback method: resolve gms-attendance.local (configurable).
+  const String normalizedHost = normalizeMdnsHostname(mdnsServerHost);
+  const IPAddress hostIp =
+      MDNS.queryHost(normalizedHost.c_str(), MDNS_QUERY_TIMEOUT_MS);
+
+  if (applyDiscoveredServer(hostIp, 3000, normalizedHost)) {
+    return true;
+  }
+
+  Serial.println("[MDNS] No server found; using configured SERVER_URL fallback.");
+  return false;
+}
+
+void advertiseMdns() {
+  if (!WiFi.isConnected() || !mdnsActive) {
+    return;
+  }
+
+  if (millis() - lastMdnsAdvertisedAt < MDNS_UPDATE_INTERVAL_MS) {
+    return;
+  }
+
+  // ESPmDNS continues advertising automatically after begin()/addService().
+  lastMdnsAdvertisedAt = millis();
+}
+
+void startMdns() {
+  if (!WiFi.isConnected() || mdnsActive) {
+    return;
+  }
+
+  const String hostname = deviceMdnsHostname();
+  if (MDNS.begin(hostname.c_str())) {
+    MDNS.addService("http", "tcp", WEB_ADMIN_PORT);
+    MDNS.addService("gms-device", "tcp", WEB_ADMIN_PORT);
+    MDNS.addServiceTxt("gms-device", "tcp", "deviceId", deviceId.c_str());
+    MDNS.addServiceTxt("gms-device", "tcp", "version", FIRMWARE_VERSION);
+    MDNS.addServiceTxt("gms-device", "tcp", "location", deviceLocation.c_str());
+    mdnsActive = true;
+    lastMdnsAdvertisedAt = 0;
+    lastMdnsDiscoveryAt = 0;
+    Serial.println(String("[MDNS] Device available at http://") + hostname + ".local/");
+    discoverAttendanceServer(true);
+  } else {
+    mdnsActive = false;
+    Serial.println("[MDNS] Failed to start.");
+  }
+}
+
+void stopMdns() {
+  if (!mdnsActive) {
+    return;
+  }
+
+  MDNS.end();
+  mdnsActive = false;
+  Serial.println("[MDNS] Stopped.");
+}
+
+void maintainMdns() {
+  if (WiFi.isConnected() && !mdnsActive) {
+    startMdns();
+  }
+
+  if (!WiFi.isConnected()) {
+    stopMdns();
+    discoveredServerUrl = "";
+    resolvedServerHost = "";
+    return;
+  }
+
+  advertiseMdns();
+  discoverAttendanceServer(false);
+}
+
+// =====================================================
+// PREFERENCES-BASED CONFIG
+// =====================================================
+
+Preferences devicePreferences;
+
+bool settingValueIsTrue(String value) {
+  value.trim();
+  value.toUpperCase();
+  return value == "1" || value == "TRUE" || value == "YES" || value == "ON" || value == "ENABLE" || value == "ENABLED";
+}
+
+void loadDeviceConfig() {
+  devicePreferences.begin("gms-config", true);
+
+  const String savedServerUrl = devicePreferences.getString("server_url", "");
+  const String savedCloudUrl = devicePreferences.getString("cloud_url", "");
+  const String savedDeviceId = devicePreferences.getString("device_id", "");
+  const String savedLocation = devicePreferences.getString("location", "");
+  const String savedWifiSsid = devicePreferences.getString("wifi_ssid", "");
+  const String savedWifiPassword = devicePreferences.getString("wifi_pass", "");
+  const String savedMdnsHost = devicePreferences.getString("mdns_host", "");
+  const String savedOtaPassword = devicePreferences.getString("ota_pass", "");
+  const String savedWebUser = devicePreferences.getString("web_user", "");
+  const String savedWebPassword = devicePreferences.getString("web_pass", "");
+  const String savedMqttHost = devicePreferences.getString("mqtt_host", "");
+  const String savedMqttUser = devicePreferences.getString("mqtt_user", "");
+  const String savedMqttPassword = devicePreferences.getString("mqtt_pass", "");
+  const String savedMqttTopic = devicePreferences.getString("mqtt_topic", "");
+
+  webAdminEnabled = devicePreferences.getBool("web_enabled", webAdminEnabled);
+  otaEnabled = devicePreferences.getBool("ota_enabled", otaEnabled);
+  mqttEnabled = devicePreferences.getBool("mqtt_enabled", mqttEnabled);
+  mqttPort = static_cast<uint16_t>(devicePreferences.getUInt("mqtt_port", mqttPort));
+
+  devicePreferences.end();
+
+  if (!savedServerUrl.isEmpty()) serverUrl = savedServerUrl;
+  if (!savedCloudUrl.isEmpty()) cloudApiUrl = savedCloudUrl;
+  if (!savedDeviceId.isEmpty()) deviceId = savedDeviceId;
+  if (!savedLocation.isEmpty()) deviceLocation = savedLocation;
+  if (!savedWifiSsid.isEmpty()) wifiSsid = savedWifiSsid;
+  if (!savedWifiPassword.isEmpty()) wifiPassword = savedWifiPassword;
+  if (!savedMdnsHost.isEmpty()) mdnsServerHost = savedMdnsHost;
+  if (!savedOtaPassword.isEmpty()) otaPassword = savedOtaPassword;
+  if (!savedWebUser.isEmpty()) webAdminUsername = savedWebUser;
+  if (!savedWebPassword.isEmpty()) webAdminPassword = savedWebPassword;
+  if (!savedMqttHost.isEmpty()) mqttHost = savedMqttHost;
+  if (!savedMqttUser.isEmpty()) mqttUsername = savedMqttUser;
+  if (!savedMqttPassword.isEmpty()) mqttPassword = savedMqttPassword;
+  if (!savedMqttTopic.isEmpty()) mqttTopicPrefix = savedMqttTopic;
+
+  activeApiUrl = effectiveLocalServerUrl() + "/api/attendance/scan";
+}
+
+void requestRemoteServicesRestart() {
+  remoteServicesRestartRequested = true;
+  lastRemoteServiceAttemptAt = 0;
+}
+
+bool updateConfigSetting(
+    const String& rawKey,
+    const String& rawValue,
+    String& resultMessage
+) {
+  String key = rawKey;
+  String value = rawValue;
+  key.trim();
+  key.toUpperCase();
+  value.trim();
+
+  if (key.isEmpty()) {
+    resultMessage = "Missing configuration key.";
+    return false;
+  }
+
+  devicePreferences.begin("gms-config", false);
+  bool recognized = true;
+  bool reconnectWifi = false;
+  bool restartRemoteServices = false;
+  bool resetLocalRoute = false;
+
+  if (key == "SERVER_URL") {
+    if (!value.startsWith("http://") && !value.startsWith("https://")) {
+      recognized = false;
+      resultMessage = "SERVER_URL must start with http:// or https://";
+    } else {
+      serverUrl = value;
+      devicePreferences.putString("server_url", serverUrl);
+      resetLocalRoute = true;
+    }
+  } else if (key == "CLOUD_URL") {
+    if (!value.startsWith("http://") && !value.startsWith("https://")) {
+      recognized = false;
+      resultMessage = "CLOUD_URL must start with http:// or https://";
+    } else {
+      cloudApiUrl = value;
+      devicePreferences.putString("cloud_url", cloudApiUrl);
+    }
+  } else if (key == "DEVICE_ID") {
+    if (value.isEmpty()) {
+      recognized = false;
+      resultMessage = "DEVICE_ID cannot be empty.";
+    } else {
+      deviceId = value;
+      devicePreferences.putString("device_id", deviceId);
+      restartRequested = true;
+      restartRequestedAt = millis();
+    }
+  } else if (key == "LOCATION") {
+    deviceLocation = value;
+    devicePreferences.putString("location", deviceLocation);
+    restartRemoteServices = true;
+  } else if (key == "WIFI_SSID") {
+    if (value.isEmpty()) {
+      recognized = false;
+      resultMessage = "WIFI_SSID cannot be empty.";
+    } else {
+      wifiSsid = value;
+      devicePreferences.putString("wifi_ssid", wifiSsid);
+      reconnectWifi = true;
+    }
+  } else if (key == "WIFI_PASS") {
+    wifiPassword = value;
+    devicePreferences.putString("wifi_pass", wifiPassword);
+    reconnectWifi = true;
+  } else if (key == "MDNS_SERVER_HOST") {
+    mdnsServerHost = normalizeMdnsHostname(value);
+    devicePreferences.putString("mdns_host", mdnsServerHost);
+    discoveredServerUrl = "";
+    lastMdnsDiscoveryAt = 0;
+  } else if (key == "OTA_PASSWORD") {
+    if (value.length() < 8) {
+      recognized = false;
+      resultMessage = "OTA_PASSWORD must be at least 8 characters.";
+    } else {
+      otaPassword = value;
+      devicePreferences.putString("ota_pass", otaPassword);
+      restartRemoteServices = true;
+    }
+  } else if (key == "OTA_ENABLED") {
+    otaEnabled = settingValueIsTrue(value);
+    devicePreferences.putBool("ota_enabled", otaEnabled);
+    restartRemoteServices = true;
+  } else if (key == "WEB_ENABLED") {
+    webAdminEnabled = settingValueIsTrue(value);
+    devicePreferences.putBool("web_enabled", webAdminEnabled);
+  } else if (key == "WEB_USER") {
+    webAdminUsername = value;
+    devicePreferences.putString("web_user", webAdminUsername);
+  } else if (key == "WEB_PASSWORD") {
+    if (value.length() < 8) {
+      recognized = false;
+      resultMessage = "WEB_PASSWORD must be at least 8 characters.";
+    } else {
+      webAdminPassword = value;
+      devicePreferences.putString("web_pass", webAdminPassword);
+    }
+  } else if (key == "MQTT_ENABLED") {
+    mqttEnabled = settingValueIsTrue(value);
+    devicePreferences.putBool("mqtt_enabled", mqttEnabled);
+  } else if (key == "MQTT_HOST") {
+    mqttHost = value;
+    devicePreferences.putString("mqtt_host", mqttHost);
+  } else if (key == "MQTT_PORT") {
+    const long parsedPort = value.toInt();
+    if (parsedPort < 1 || parsedPort > 65535) {
+      recognized = false;
+      resultMessage = "MQTT_PORT must be from 1 to 65535.";
+    } else {
+      mqttPort = static_cast<uint16_t>(parsedPort);
+      devicePreferences.putUInt("mqtt_port", mqttPort);
+    }
+  } else if (key == "MQTT_USER") {
+    mqttUsername = value;
+    devicePreferences.putString("mqtt_user", mqttUsername);
+  } else if (key == "MQTT_PASSWORD") {
+    mqttPassword = value;
+    devicePreferences.putString("mqtt_pass", mqttPassword);
+  } else if (key == "MQTT_TOPIC") {
+    mqttTopicPrefix = value;
+    while (mqttTopicPrefix.endsWith("/")) {
+      mqttTopicPrefix.remove(mqttTopicPrefix.length() - 1);
+    }
+    devicePreferences.putString("mqtt_topic", mqttTopicPrefix);
+  } else {
+    recognized = false;
+    resultMessage = "Unknown configuration key.";
+  }
+
+  devicePreferences.end();
+
+  if (!recognized) {
+    return false;
+  }
+
+#if GMS_MQTT_LIBRARY_AVAILABLE
+  if (key.startsWith("MQTT_") && mqttClient.connected()) {
+    mqttClient.disconnect();
+  }
+#endif
+
+  if (resetLocalRoute) {
+    discoveredServerUrl = "";
+    serverReachable = false;
+    activeApiUrl = effectiveLocalServerUrl() + "/api/attendance/scan";
+    lastHeartbeatAttempt = millis() - DISCONNECTED_HEARTBEAT_INTERVAL_MS;
+  }
+
+  if (restartRemoteServices) {
+    requestRemoteServicesRestart();
+  }
+
+  if (reconnectWifi) {
+    Serial.println("[CONFIG] WiFi settings changed; reconnect scheduled.");
+    serverReachable = false;
+    discoveredServerUrl = "";
+    wifiReconnectRequested = true;
+    wifiReconnectRequestedAt = millis();
+  }
+
+  lastConfigSaveAt = millis();
+  resultMessage = key + " saved.";
+  Serial.print("[CONFIG] ");
+  Serial.println(resultMessage);
+  return true;
+}
+
+// Compatibility wrappers retained so existing calls and server-side commands do
+// not lose behavior. New code should call updateConfigSetting().
+void applyDeviceConfig() {
+  String message;
+  if (!pendingServerUrl.isEmpty()) updateConfigSetting("SERVER_URL", pendingServerUrl, message);
+  if (!pendingCloudUrl.isEmpty()) updateConfigSetting("CLOUD_URL", pendingCloudUrl, message);
+  if (!pendingDeviceId.isEmpty()) updateConfigSetting("DEVICE_ID", pendingDeviceId, message);
+  if (!pendingDeviceLocation.isEmpty()) updateConfigSetting("LOCATION", pendingDeviceLocation, message);
+  if (!pendingWifiSsid.isEmpty()) updateConfigSetting("WIFI_SSID", pendingWifiSsid, message);
+  if (!pendingWifiPassword.isEmpty()) updateConfigSetting("WIFI_PASS", pendingWifiPassword, message);
+
+  pendingServerUrl = "";
+  pendingCloudUrl = "";
+  pendingDeviceId = "";
+  pendingDeviceLocation = "";
+  pendingWifiSsid = "";
+  pendingWifiPassword = "";
+  configDirty = false;
+}
+
+void saveConfigIfDirty() {
+  if (!configDirty) return;
+  applyDeviceConfig();
+}
+
+void queueConfigUpdate(
+  const String& newServerUrl,
+  const String& newCloudUrl,
+  const String& newDeviceId,
+  const String& newLocation,
+  const String& newWifiSsid,
+  const String& newWifiPassword
+) {
+  if (!newServerUrl.isEmpty()) pendingServerUrl = newServerUrl;
+  if (!newCloudUrl.isEmpty()) pendingCloudUrl = newCloudUrl;
+  if (!newDeviceId.isEmpty()) pendingDeviceId = newDeviceId;
+  if (!newLocation.isEmpty()) pendingDeviceLocation = newLocation;
+  if (!newWifiSsid.isEmpty()) pendingWifiSsid = newWifiSsid;
+  if (!newWifiPassword.isEmpty()) pendingWifiPassword = newWifiPassword;
+  configDirty = true;
+  applyDeviceConfig();
+}
+
+// =====================================================
+// EMPLOYEE NAME CACHE
+// =====================================================
+
+Preferences employeeCachePrefs;
+const char* EMPLOYEE_CACHE_INDEX_KEY = "_ids";
+
+String loadEmployeeCacheIndex() {
+  employeeCachePrefs.begin("emp-cache", true);
+  const String index =
+      employeeCachePrefs.getString(EMPLOYEE_CACHE_INDEX_KEY, "");
+  employeeCachePrefs.end();
+  return index;
+}
+
+bool cacheIndexContains(const String& index, uint16_t fingerprintId) {
+  const String token = String(fingerprintId);
+  int start = 0;
+
+  while (start < index.length()) {
+    int separator = index.indexOf(',', start);
+    if (separator < 0) separator = index.length();
+
+    String current = index.substring(start, separator);
+    current.trim();
+    if (current == token) return true;
+
+    start = separator + 1;
+  }
+
+  return false;
+}
+
+void rememberEmployeeCacheId(uint16_t fingerprintId) {
+  employeeCachePrefs.begin("emp-cache", false);
+  String index =
+      employeeCachePrefs.getString(EMPLOYEE_CACHE_INDEX_KEY, "");
+
+  if (!cacheIndexContains(index, fingerprintId)) {
+    if (!index.isEmpty()) index += ',';
+    index += String(fingerprintId);
+    employeeCachePrefs.putString(EMPLOYEE_CACHE_INDEX_KEY, index);
+  }
+
+  employeeCachePrefs.end();
+}
+
+String getEmployeeName(uint16_t fingerprintId) {
+  employeeCachePrefs.begin("emp-cache", true);
+  const String key = String(fingerprintId);
+  const String name = employeeCachePrefs.getString(key.c_str(), "");
+  employeeCachePrefs.end();
+  return name;
+}
+
+void cacheEmployeeName(uint16_t fingerprintId, const String& fullName) {
+  employeeCachePrefs.begin("emp-cache", false);
+  const String key = String(fingerprintId);
+  employeeCachePrefs.putString(key.c_str(), fullName);
+  employeeCachePrefs.end();
+  rememberEmployeeCacheId(fingerprintId);
+
+  Serial.print("[CACHE] Cached name for ID ");
+  Serial.print(fingerprintId);
+  Serial.print(": ");
+  Serial.println(fullName);
+}
+
+void clearEmployeeCache() {
+  employeeCachePrefs.begin("emp-cache", false);
+  employeeCachePrefs.clear();
+  employeeCachePrefs.end();
+  Serial.println("[CACHE] Cleared all cached names.");
+}
+
+size_t countCachedEmployees() {
+  const String index = loadEmployeeCacheIndex();
+  size_t count = 0;
+  int start = 0;
+
+  while (start < index.length()) {
+    int separator = index.indexOf(',', start);
+    if (separator < 0) separator = index.length();
+
+    String token = index.substring(start, separator);
+    token.trim();
+    if (!token.isEmpty()) count++;
+
+    start = separator + 1;
+  }
+
+  return count;
+}
+
+void printCachedEmployeeNames() {
+  const String index = loadEmployeeCacheIndex();
+  int start = 0;
+
+  if (index.isEmpty()) {
+    Serial.println("  (none indexed yet)");
+    return;
+  }
+
+  while (start < index.length()) {
+    int separator = index.indexOf(',', start);
+    if (separator < 0) separator = index.length();
+
+    String token = index.substring(start, separator);
+    token.trim();
+
+    if (!token.isEmpty()) {
+      const uint16_t id = static_cast<uint16_t>(token.toInt());
+      Serial.print("  ID ");
+      Serial.print(id);
+      Serial.print(": ");
+      Serial.println(getEmployeeName(id));
+    }
+
+    start = separator + 1;
+  }
+}
+
+void loadEmployeeCache() {
+  const size_t count = countCachedEmployees();
+  Serial.print("[CACHE] Loaded ");
+  Serial.print(count);
+  Serial.println(" cached employee names.");
+}
+
+String cachedNameOrUnknown(uint16_t fingerprintId) {
+  const String cached = getEmployeeName(fingerprintId);
+  if (!cached.isEmpty()) {
+    return cached;
+  }
+  return String("ID: ") + String(fingerprintId);
+}
+
+// =====================================================
+// WEB ADMIN INTERFACE
+// =====================================================
+
+String htmlEscape(const String& input) {
+  String output = input;
+  output.replace("&", "&amp;");
+  output.replace("<", "&lt;");
+  output.replace(">", "&gt;");
+  output.replace("\"", "&quot;");
+  output.replace("'", "&#39;");
+  return output;
+}
+
+bool requireWebAdminAuthentication() {
+  if (webAdminUsername.isEmpty() || webAdminPassword.isEmpty()) {
+    return true;
+  }
+
+  if (webServer.authenticate(
+        webAdminUsername.c_str(),
+        webAdminPassword.c_str()
+      )) {
+    return true;
+  }
+
+  webServer.requestAuthentication();
+  return false;
+}
+
+String buildStatusJson() {
+  JsonDocument document;
+  document["deviceId"] = deviceId;
+  document["location"] = deviceLocation;
+  document["firmwareVersion"] = FIRMWARE_VERSION;
+  document["uptimeSeconds"] = millis() / 1000UL;
+  document["wifiConnected"] = WiFi.isConnected();
+  document["wifiSsid"] = WiFi.SSID();
+  document["wifiRssi"] = WiFi.isConnected() ? WiFi.RSSI() : 0;
+  document["deviceIp"] = WiFi.localIP().toString();
+  document["serverReachable"] = serverReachable;
+  document["activeServer"] = activeServerIsLocal ? "LOCAL" : "CLOUD";
+  document["effectiveLocalServerUrl"] = effectiveLocalServerUrl();
+  document["discoveredServerUrl"] = discoveredServerUrl;
+  document["lastHttpStatus"] = lastServerStatusCode;
+  document["pendingAttendance"] = countPendingRecords();
+  document["pendingEnrollment"] = countPendingEnrollmentRequests();
+  document["cachedEmployees"] = countCachedEmployees();
+  document["fingerprintReady"] = fingerprintReady;
+  document["fingerprintTemplates"] = finger.templateCount;
+  document["rtcReady"] = rtcReady;
+  document["currentTime"] = rtcReady ? formatTimestamp(rtc.now()) : String("RTC unavailable");
+  document["ntpSynced"] = ntpSynced;
+  document["rtcDriftSeconds"] = ntpDriftSeconds;
+  document["oledReady"] = oledReady;
+  document["storage"] = offlineStorageName();
+  document["microSd"] = microSdStatus;
+  document["microSdCode"] = microSdCode;
+  document["microSdDetail"] = microSdDetail;
+  document["microSdReady"] = microSdReady;
+  document["freeHeap"] = ESP.getFreeHeap();
+  document["minimumFreeHeap"] = ESP.getMinFreeHeap();
+  document["mdnsHostname"] = deviceMdnsHostname() + ".local";
+  document["otaEnabled"] = otaEnabled;
+  document["otaStarted"] = otaStarted;
+  document["webAdminEnabled"] = webAdminEnabled;
+  document["mqttEnabled"] = mqttEnabled;
+  document["mqttLibraryAvailable"] = GMS_MQTT_LIBRARY_AVAILABLE == 1;
+#if GMS_MQTT_LIBRARY_AVAILABLE
+  document["mqttConnected"] = mqttClient.connected();
+#else
+  document["mqttConnected"] = false;
+#endif
+
+  String json;
+  serializeJson(document, json);
+  return json;
+}
+
+String webPageHeader(const String& title) {
+  String html;
+  html.reserve(1800);
+  html += F("<!doctype html><html><head><meta charset='utf-8'>");
+  html += F("<meta name='viewport' content='width=device-width,initial-scale=1'>");
+  html += F("<style>body{font-family:Arial,sans-serif;max-width:980px;margin:24px auto;padding:0 14px;background:#f5f7fb;color:#172033}nav a{margin-right:12px}section{background:white;border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 3px 14px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.card{background:#f7f8fc;border:1px solid #e3e6ef;border-radius:10px;padding:12px}.ok{color:#087f5b}.bad{color:#c92a2a}input,select{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 12px;border:1px solid #ccd2df;border-radius:8px}button{padding:10px 15px;border:0;border-radius:8px;background:#5b3df5;color:white;cursor:pointer}.danger{background:#c92a2a}small{color:#667085}code{word-break:break-all}</style>");
+  html += "<title>" + htmlEscape(title) + "</title></head><body>";
+  html += "<h1>GMS Attendance Device</h1><nav>";
+  html += F("<a href='/'>Status</a><a href='/config'>Config</a><a href='/logs'>Logs</a><a href='/enroll'>Enroll</a><a href='/api/status'>JSON</a></nav>");
+  return html;
+}
+
+String webPageFooter() {
+  return F("</body></html>");
+}
+
+void handleWebRoot() {
+  if (!requireWebAdminAuthentication()) return;
+
+  String html = webPageHeader("Device Status");
+  html.reserve(7000);
+  html += "<section><h2>Connection</h2><div class='grid'>";
+  html += "<div class='card'><b>Wi-Fi</b><br><span class='" + String(WiFi.isConnected() ? "ok" : "bad") + "'>" + String(WiFi.isConnected() ? "Connected" : "Disconnected") + "</span><br>" + htmlEscape(WiFi.SSID()) + "<br>RSSI: " + String(WiFi.isConnected() ? WiFi.RSSI() : 0) + " dBm</div>";
+  html += "<div class='card'><b>Device IP</b><br><code>" + WiFi.localIP().toString() + "</code><br><small>http://" + htmlEscape(deviceMdnsHostname()) + ".local/</small></div>";
+  html += "<div class='card'><b>Attendance Server</b><br><span class='" + String(serverReachable ? "ok" : "bad") + "'>" + String(serverReachable ? "Reachable" : "Unavailable") + "</span><br><code>" + htmlEscape(activeApiUrl) + "</code></div>";
+  html += "<div class='card'><b>Route</b><br>" + String(activeServerIsLocal ? "Local LAN" : "Cloud") + "<br>HTTP " + String(lastServerStatusCode) + "</div></div></section>";
+
+  html += "<section><h2>Hardware</h2><div class='grid'>";
+  html += "<div class='card'><b>R503</b><br>" + String(fingerprintReady ? "Ready" : "Not ready") + "<br>Templates: " + String(finger.templateCount) + "</div>";
+  html += "<div class='card'><b>RTC / NTP</b><br>" + htmlEscape(rtcReady ? formatTimestamp(rtc.now()) : String("RTC unavailable")) + "<br>Drift: " + String(ntpDriftSeconds, 1) + " sec</div>";
+  html += "<div class='card'><b>Storage</b><br>" + String(offlineStorageName()) + "<br>SD: " + htmlEscape(microSdCode + " " + microSdStatus) + "<br><small>" + htmlEscape(microSdDetail) + "</small></div>";
+  html += "<div class='card'><b>Memory</b><br>Free: " + String(ESP.getFreeHeap()) + " bytes<br>Minimum: " + String(ESP.getMinFreeHeap()) + "</div></div></section>";
+
+  html += "<section><h2>Queues and Services</h2><div class='grid'>";
+  html += "<div class='card'><b>Attendance pending</b><br>" + String(countPendingRecords()) + "</div>";
+  html += "<div class='card'><b>Enrollment pending</b><br>" + String(countPendingEnrollmentRequests()) + "</div>";
+  html += "<div class='card'><b>Employee cache</b><br>" + String(countCachedEmployees()) + " names</div>";
+  html += "<div class='card'><b>Remote services</b><br>Web: " + String(webAdminStarted ? "ON" : "OFF") + "<br>OTA: " + String(otaStarted ? "ON" : "OFF") + "<br>MQTT: ";
+#if GMS_MQTT_LIBRARY_AVAILABLE
+  html += String(mqttClient.connected() ? "CONNECTED" : (mqttEnabled ? "DISCONNECTED" : "OFF"));
+#else
+  html += String(mqttEnabled ? "LIBRARY MISSING" : "OFF");
+#endif
+  html += "</div></div></section>";
+
+  html += F("<section><form method='post' action='/discover'><button>Discover server now</button></form><br><form method='post' action='/restart'><button class='danger'>Restart device</button></form></section>");
+  html += webPageFooter();
+  webServer.send(200, "text/html", html);
+}
+
+void handleWebStatusJson() {
+  if (!requireWebAdminAuthentication()) return;
+  webServer.send(200, "application/json", buildStatusJson());
+}
+
+void handleWebLogs() {
+  if (!requireWebAdminAuthentication()) return;
+
+  String html = webPageHeader("Offline Logs");
+  html += "<section><h2>Offline queues</h2><p>Attendance records waiting: <b>" + String(countPendingRecords()) + "</b></p>";
+  html += "<p>Enrollment requests waiting: <b>" + String(countPendingEnrollmentRequests()) + "</b></p>";
+  html += "<p>Storage backend: <b>" + String(offlineStorageName()) + "</b></p>";
+  html += F("<form method='post' action='/clear-logs' onsubmit=\"return confirm('Clear all offline logs?')\"><button class='danger'>Clear offline logs</button></form></section>");
+  html += webPageFooter();
+  webServer.send(200, "text/html", html);
+}
+
+void handleWebConfigGet() {
+  if (!requireWebAdminAuthentication()) return;
+
+  String html = webPageHeader("Configuration");
+  html.reserve(9000);
+  html += F("<section><h2>Device configuration</h2><form method='post' action='/config'>");
+  html += "<label>Local server URL</label><input name='server_url' value='" + htmlEscape(serverUrl) + "'>";
+  html += "<label>Cloud scan API URL</label><input name='cloud_url' value='" + htmlEscape(cloudApiUrl) + "'>";
+  html += "<label>mDNS server host</label><input name='mdns_host' value='" + htmlEscape(mdnsServerHost) + "'><small>Resolves as .local and also searches _attendance._tcp.</small>";
+  html += "<label>Device ID</label><input name='device_id' value='" + htmlEscape(deviceId) + "'>";
+  html += "<label>Location</label><input name='location' value='" + htmlEscape(deviceLocation) + "'>";
+  html += "<label>Wi-Fi SSID</label><input name='wifi_ssid' value='" + htmlEscape(wifiSsid) + "'>";
+  html += F("<label>New Wi-Fi password</label><input type='password' name='wifi_pass' placeholder='Leave blank to keep current password'>");
+
+  html += "<label>Web Admin enabled</label><select name='web_enabled'><option value='1'" + String(webAdminEnabled ? " selected" : "") + ">Enabled</option><option value='0'" + String(!webAdminEnabled ? " selected" : "") + ">Disabled</option></select>";
+  html += "<label>Web username</label><input name='web_user' value='" + htmlEscape(webAdminUsername) + "'>";
+  html += F("<label>New Web password</label><input type='password' name='web_pass' placeholder='Leave blank to keep current password'>");
+
+  html += "<label>OTA enabled</label><select name='ota_enabled'><option value='1'" + String(otaEnabled ? " selected" : "") + ">Enabled</option><option value='0'" + String(!otaEnabled ? " selected" : "") + ">Disabled</option></select>";
+  html += F("<label>New OTA password</label><input type='password' name='ota_pass' placeholder='Leave blank to keep current password'>");
+
+  html += "<label>MQTT enabled</label><select name='mqtt_enabled'><option value='1'" + String(mqttEnabled ? " selected" : "") + ">Enabled</option><option value='0'" + String(!mqttEnabled ? " selected" : "") + ">Disabled</option></select>";
+  html += "<label>MQTT host</label><input name='mqtt_host' value='" + htmlEscape(mqttHost) + "'>";
+  html += "<label>MQTT port</label><input name='mqtt_port' type='number' value='" + String(mqttPort) + "'>";
+  html += "<label>MQTT username</label><input name='mqtt_user' value='" + htmlEscape(mqttUsername) + "'>";
+  html += F("<label>New MQTT password</label><input type='password' name='mqtt_pass' placeholder='Leave blank to keep current password'>");
+  html += "<label>MQTT topic prefix</label><input name='mqtt_topic' value='" + htmlEscape(mqttTopicPrefix) + "'>";
+  html += F("<button>Save configuration</button></form><p><small>Wi-Fi changes reconnect automatically. Device ID, OTA password, and mDNS changes restart remote services.</small></p></section>");
+  html += webPageFooter();
+  webServer.send(200, "text/html", html);
+}
+
+void handleWebConfigPost() {
+  if (!requireWebAdminAuthentication()) return;
+
+  String messages = "";
+  String result;
+  auto applyArgument = [&](const char* argument, const char* key, bool allowEmpty) {
+    if (!webServer.hasArg(argument)) return;
+    const String value = webServer.arg(argument);
+    if (!allowEmpty && value.isEmpty()) return;
+    if (updateConfigSetting(key, value, result)) {
+      messages += result + " ";
+    } else {
+      messages += "ERROR: " + result + " ";
+    }
+  };
+
+  applyArgument("server_url", "SERVER_URL", false);
+  applyArgument("cloud_url", "CLOUD_URL", false);
+  applyArgument("mdns_host", "MDNS_SERVER_HOST", false);
+  applyArgument("device_id", "DEVICE_ID", false);
+  applyArgument("location", "LOCATION", true);
+  applyArgument("wifi_ssid", "WIFI_SSID", false);
+  applyArgument("wifi_pass", "WIFI_PASS", false);
+  applyArgument("web_enabled", "WEB_ENABLED", false);
+  applyArgument("web_user", "WEB_USER", true);
+  applyArgument("web_pass", "WEB_PASSWORD", false);
+  applyArgument("ota_enabled", "OTA_ENABLED", false);
+  applyArgument("ota_pass", "OTA_PASSWORD", false);
+  applyArgument("mqtt_enabled", "MQTT_ENABLED", false);
+  applyArgument("mqtt_host", "MQTT_HOST", true);
+  applyArgument("mqtt_port", "MQTT_PORT", false);
+  applyArgument("mqtt_user", "MQTT_USER", true);
+  applyArgument("mqtt_pass", "MQTT_PASSWORD", false);
+  applyArgument("mqtt_topic", "MQTT_TOPIC", false);
+
+  String html = webPageHeader("Configuration Saved");
+  html += "<section><h2>Configuration result</h2><p>" + htmlEscape(messages) + "</p><p><a href='/config'>Back to configuration</a></p></section>";
+  html += webPageFooter();
+  webServer.send(200, "text/html", html);
+}
+
+void handleWebEnrollGet() {
+  if (!requireWebAdminAuthentication()) return;
+
+  String html = webPageHeader("Fingerprint Enrollment");
+  html += F("<section><h2>Start enrollment</h2><p>After pressing Start, go to the terminal and follow the OLED prompts.</p><form method='post' action='/enroll'><label>Fingerprint ID</label><input type='number' min='1' max='1000' name='id' placeholder='Leave blank for first available ID'><button>Start enrollment</button></form></section>");
+  html += webPageFooter();
+  webServer.send(200, "text/html", html);
+}
+
+void handleWebEnrollPost() {
+  if (!requireWebAdminAuthentication()) return;
+
+  int requestedId = -1;
+  if (webServer.hasArg("id") && !webServer.arg("id").isEmpty()) {
+    requestedId = webServer.arg("id").toInt();
+    if (requestedId < 1 || requestedId > 1000) {
+      webServer.send(400, "text/plain", "Fingerprint ID must be 1 to 1000.");
+      return;
+    }
+  }
+
+  pendingWebEnrollmentId = requestedId;
+  webServer.send(202, "text/plain", "Enrollment queued. Follow the OLED and R503 prompts.");
+}
+
+void handleWebClearLogs() {
+  if (!requireWebAdminAuthentication()) return;
+  clearOfflineLogs();
+  webServer.sendHeader("Location", "/logs");
+  webServer.send(303, "text/plain", "Logs cleared.");
+}
+
+void handleWebDiscover() {
+  if (!requireWebAdminAuthentication()) return;
+  const bool found = discoverAttendanceServer(true);
+  webServer.sendHeader("Location", "/");
+  webServer.send(303, "text/plain", found ? "Server discovered." : "No mDNS server found.");
+}
+
+void handleWebRestart() {
+  if (!requireWebAdminAuthentication()) return;
+  restartRequested = true;
+  restartRequestedAt = millis();
+  webServer.send(202, "text/plain", "Device restart scheduled.");
+}
+
+void setupWebAdminRoutes() {
+  if (webRoutesConfigured) return;
+
+  webServer.on("/", HTTP_GET, handleWebRoot);
+  webServer.on("/api/status", HTTP_GET, handleWebStatusJson);
+  webServer.on("/logs", HTTP_GET, handleWebLogs);
+  webServer.on("/config", HTTP_GET, handleWebConfigGet);
+  webServer.on("/config", HTTP_POST, handleWebConfigPost);
+  webServer.on("/enroll", HTTP_GET, handleWebEnrollGet);
+  webServer.on("/enroll", HTTP_POST, handleWebEnrollPost);
+  webServer.on("/clear-logs", HTTP_POST, handleWebClearLogs);
+  webServer.on("/discover", HTTP_POST, handleWebDiscover);
+  webServer.on("/restart", HTTP_POST, handleWebRestart);
+  webServer.onNotFound([]() {
+    if (!requireWebAdminAuthentication()) return;
+    webServer.send(404, "text/plain", "Not found");
+  });
+
+  webRoutesConfigured = true;
+}
+
+void startWebAdmin() {
+  if (webAdminStarted || !webAdminEnabled || !WiFi.isConnected()) return;
+  setupWebAdminRoutes();
+  webServer.begin();
+  webAdminStarted = true;
+  Serial.print("[WEB] Admin interface: http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/");
+}
+
+void stopWebAdmin() {
+  if (!webAdminStarted) return;
+  webServer.stop();
+  webAdminStarted = false;
+  Serial.println("[WEB] Admin interface stopped.");
+}
+
+void maintainWebAdmin() {
+  if (!WiFi.isConnected() || !webAdminEnabled) {
+    stopWebAdmin();
+    return;
+  }
+
+  startWebAdmin();
+  if (webAdminStarted) {
+    webServer.handleClient();
+  }
+}
+
+void maintainPendingWebActions() {
+  if (pendingWebEnrollmentId != 0 && !feedbackActive && !syncInProgress) {
+    int enrollmentId = pendingWebEnrollmentId;
+    pendingWebEnrollmentId = 0;
+
+    if (enrollmentId < 0) {
+      enrollmentId = firstAvailableFingerprintId();
+    }
+
+    if (enrollmentId < 1) {
+      showErrorFeedback("R503 memory is full.");
+    } else {
+      enrollFingerprint(static_cast<uint16_t>(enrollmentId));
+    }
+  }
+
+  if (
+    wifiReconnectRequested &&
+    millis() - wifiReconnectRequestedAt >= 750
+  ) {
+    wifiReconnectRequested = false;
+    Serial.println("[WIFI] Applying saved WiFi settings now.");
+    stopOtaService();
+    stopWebAdmin();
+    stopMdns();
+    WiFi.disconnect();
+    delay(50);
+    startWiFiConnection();
+  }
+
+  if (restartRequested && millis() - restartRequestedAt >= 1500) {
+    Serial.println("[SYSTEM] Restarting to apply configuration.");
+    delay(50);
+    ESP.restart();
+  }
+}
+
+// =====================================================
+// OTA FIRMWARE UPDATES
+// =====================================================
+
+void startOtaService() {
+  if (otaStarted || !otaEnabled || !WiFi.isConnected()) return;
+
+  const String otaHostname = deviceMdnsHostname();
+  ArduinoOTA.setMdnsEnabled(false);  // ESPmDNS is managed by this firmware.
+  ArduinoOTA.setPort(OTA_PORT);
+  ArduinoOTA.setHostname(otaHostname.c_str());
+  if (!otaPassword.isEmpty()) {
+    ArduinoOTA.setPassword(otaPassword.c_str());
+  }
+
+  ArduinoOTA.onStart([]() {
+    syncInProgress = true;
+    feedbackActive = true;
+    setRgb(false, true, true);
+    r503CyanBreathing();
+    showOledScreen("OTA UPDATE", "RECEIVING FIRMWARE", "DO NOT POWER OFF", "", "");
+    Serial.println("[OTA] Firmware update started.");
+  });
+
+  ArduinoOTA.onEnd([]() {
+    Serial.println("[OTA] Update complete; restarting.");
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    const unsigned int percent = total > 0 ? (progress * 100U) / total : 0;
+    showOledScreen("OTA UPDATE", String(percent) + "%", "DO NOT POWER OFF", "", "");
+    esp_task_wdt_reset();
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+    syncInProgress = false;
+    feedbackActive = false;
+    Serial.print("[OTA] Error: ");
+    Serial.println(static_cast<unsigned int>(error));
+    showErrorFeedback("OTA update failed.");
+  });
+
+  ArduinoOTA.begin();
+  otaStarted = true;
+  Serial.print("[OTA] Ready: ");
+  Serial.print(otaHostname);
+  Serial.print(".local:");
+  Serial.println(OTA_PORT);
+}
+
+void stopOtaService() {
+  if (!otaStarted) return;
+  ArduinoOTA.end();
+  otaStarted = false;
+  Serial.println("[OTA] Service stopped.");
+}
+
+void maintainOtaService() {
+  if (!WiFi.isConnected() || !otaEnabled) {
+    stopOtaService();
+    return;
+  }
+
+  startOtaService();
+  if (otaStarted) {
+    ArduinoOTA.handle();
+  }
+}
+
+// =====================================================
+// MQTT TELEMETRY (OPTIONAL PUBSUBCLIENT INTEGRATION)
+// =====================================================
+
+String mqttTopic(const String& suffix) {
+  String prefix = mqttTopicPrefix;
+  while (prefix.endsWith("/")) prefix.remove(prefix.length() - 1);
+  return prefix + "/" + deviceMdnsHostname() + "/" + suffix;
+}
+
+bool publishMqttMessage(
+    const String& suffix,
+    const String& payload,
+    bool retained = false
+) {
+#if GMS_MQTT_LIBRARY_AVAILABLE
+  if (!mqttEnabled || !mqttClient.connected()) return false;
+  const String topic = mqttTopic(suffix);
+  return mqttClient.publish(topic.c_str(), payload.c_str(), retained);
+#else
+  (void)suffix;
+  (void)payload;
+  (void)retained;
+  return false;
+#endif
+}
+
+void publishMqttStatus() {
+  publishMqttMessage("status", buildStatusJson(), true);
+}
+
+void publishMqttScanEvent(
+    uint16_t fingerprintId,
+    uint16_t confidence,
+    const String& resultCode,
+    const String& fullName
+) {
+  JsonDocument document;
+  document["eventId"] = String(deviceId) + "-mqtt-" + String(millis());
+  document["deviceId"] = deviceId;
+  document["location"] = deviceLocation;
+  document["fingerprintId"] = fingerprintId;
+  document["confidence"] = confidence;
+  document["result"] = resultCode;
+  document["fullName"] = fullName;
+  document["timestamp"] = rtcReady ? formatTimestamp(rtc.now()) : String("");
+  document["serverReachable"] = serverReachable;
+
+  String payload;
+  serializeJson(document, payload);
+  publishMqttMessage("scan", payload, false);
+}
+
+void maintainMqtt() {
+#if GMS_MQTT_LIBRARY_AVAILABLE
+  if (!mqttEnabled || mqttHost.isEmpty() || !WiFi.isConnected()) {
+    if (mqttClient.connected()) mqttClient.disconnect();
+    return;
+  }
+
+  mqttClient.setServer(mqttHost.c_str(), mqttPort);
+  mqttClient.setBufferSize(1536);
+
+  if (!mqttClient.connected()) {
+    if (millis() - lastMqttReconnectAt < MQTT_RECONNECT_INTERVAL_MS) return;
+    lastMqttReconnectAt = millis();
+
+    const String clientId = deviceMdnsHostname() + "-" + String(static_cast<uint32_t>(ESP.getEfuseMac()), HEX);
+    bool connected = false;
+    if (mqttUsername.isEmpty()) {
+      connected = mqttClient.connect(clientId.c_str());
+    } else {
+      connected = mqttClient.connect(
+        clientId.c_str(),
+        mqttUsername.c_str(),
+        mqttPassword.c_str()
+      );
+    }
+
+    Serial.print("[MQTT] Connection: ");
+    Serial.println(connected ? "CONNECTED" : "FAILED");
+    if (connected) {
+      lastMqttTelemetryAt = 0;
+      publishMqttMessage("availability", "online", true);
+    }
+  }
+
+  if (!mqttClient.connected()) return;
+  mqttClient.loop();
+
+  if (millis() - lastMqttTelemetryAt >= MQTT_TELEMETRY_INTERVAL_MS) {
+    lastMqttTelemetryAt = millis();
+    publishMqttStatus();
+  }
+#else
+  static bool missingLibraryNoticeShown = false;
+  if (mqttEnabled && !missingLibraryNoticeShown) {
+    missingLibraryNoticeShown = true;
+    Serial.println("[MQTT] PubSubClient library is not installed; MQTT is disabled until it is added.");
+  }
+#endif
+}
+
+void maintainRemoteServices() {
+  if (!WiFi.isConnected()) {
+    stopOtaService();
+    stopWebAdmin();
+    stopMdns();
+    return;
+  }
+
+  if (
+    remoteServicesRestartRequested &&
+    millis() - lastRemoteServiceAttemptAt >= REMOTE_SERVICE_RETRY_MS
+  ) {
+    lastRemoteServiceAttemptAt = millis();
+    stopOtaService();
+    stopMdns();
+    remoteServicesRestartRequested = false;
+  }
+
+  maintainMdns();
+  maintainWebAdmin();
+  maintainOtaService();
+  maintainMqtt();
+  maintainPendingWebActions();
+}
+
+String displayNameOrNeedRegister(const ApiResponse& response, uint16_t fingerprintId = 0) {
   String name = response.fullName;
   name.trim();
 
-  if (name.isEmpty()) {
-    return "NOT REGISTERED";
+  if (!name.isEmpty()) {
+    return name;
   }
 
-  return name;
+  if (fingerprintId > 0) {
+    const String cached = getEmployeeName(fingerprintId);
+    if (!cached.isEmpty()) {
+      return cached;
+    }
+  }
+
+  return "NOT REGISTERED";
 }
 
 String uppercaseCopy(String value) {
@@ -2421,7 +4088,8 @@ String attendanceRemarkLine(const ApiResponse& response) {
 
 void showApiFeedback(
     const ApiResponse& response,
-    const DateTime& scanTime
+    const DateTime& scanTime,
+    uint16_t fingerprintId
 ) {
   deviceState = response.accepted ? DeviceState::SUCCESS : DeviceState::ERROR;
   if (response.deviceDisplay.hasDisplay) {
@@ -2441,7 +4109,7 @@ void showApiFeedback(
       response.code;
 
   const String employeeName =
-      displayNameOrNeedRegister(response);
+      displayNameOrNeedRegister(response, fingerprintId);
 
   const String remark =
       attendanceRemarkLine(response);
@@ -2874,6 +4542,72 @@ void synchronizePendingEnrollmentRequests() {
 // FINGERPRINT HANDLING
 // =====================================================
 
+bool isFingerprintRateLimited(
+    uint16_t fingerprintId,
+    unsigned long& remainingMs
+) {
+  const unsigned long now = millis();
+  int reusableSlot = -1;
+  int oldestSlot = 0;
+  unsigned long oldestAge = 0;
+
+  for (uint8_t index = 0; index < FINGERPRINT_COOLDOWN_SLOTS; index++) {
+    FingerprintCooldownEntry& entry = fingerprintCooldowns[index];
+
+    if (entry.fingerprintId == fingerprintId) {
+      const unsigned long elapsed = now - entry.recordedAt;
+      if (elapsed < PER_FINGERPRINT_COOLDOWN_MS) {
+        remainingMs = PER_FINGERPRINT_COOLDOWN_MS - elapsed;
+        return true;
+      }
+
+      entry.recordedAt = now;
+      remainingMs = 0;
+      return false;
+    }
+
+    if (entry.fingerprintId == 0 && reusableSlot < 0) {
+      reusableSlot = index;
+    }
+
+    const unsigned long age = now - entry.recordedAt;
+    if (age >= oldestAge) {
+      oldestAge = age;
+      oldestSlot = index;
+    }
+  }
+
+  const int targetSlot = reusableSlot >= 0 ? reusableSlot : oldestSlot;
+  fingerprintCooldowns[targetSlot].fingerprintId = fingerprintId;
+  fingerprintCooldowns[targetSlot].recordedAt = now;
+  remainingMs = 0;
+  return false;
+}
+
+void showRateLimitFeedback(
+    uint16_t fingerprintId,
+    unsigned long remainingMs
+) {
+  const unsigned long remainingSeconds = (remainingMs + 999UL) / 1000UL;
+  setRgb(true, true, false);
+  r503YellowFlash();
+  buzzerTone(950, 90);
+  beginFeedback(1800);
+
+  showLiveScanStage(
+    "PLEASE WAIT",
+    cachedNameOrUnknown(fingerprintId),
+    String("TRY IN ") + String(remainingSeconds) + " SEC",
+    "ANTI-SPAM ACTIVE"
+  );
+
+  Serial.print("[RATE LIMIT] Fingerprint ID ");
+  Serial.print(fingerprintId);
+  Serial.print(" blocked for another ");
+  Serial.print(remainingSeconds);
+  Serial.println(" second(s).");
+}
+
 bool isDuplicateFingerprint(uint16_t fingerprintId) {
   const unsigned long currentTime =
       millis();
@@ -2943,8 +4677,8 @@ bool readFingerprintMatch(
     "KEEP STEADY",
     ""
   );
-  setRgb(true, false, true);    // external RGB: purple = finger detected
-  r503PurpleOn();
+  setRgb(true, false, true);    // external RGB stays purple during capture
+  r503PurpleBreathing();           // R503 breathes while finger is detected
 
   if (imageStatus != FINGERPRINT_OK) {
     sendFingerprintScanStatus("FAILED");
@@ -2961,9 +4695,9 @@ bool readFingerprintMatch(
     "DO NOT REMOVE",
     ""
   );
-  setRgb(false, false, true);   // external RGB: blue = captured OK
+  setRgb(false, false, true);   // external RGB stays blue while image is processed
   sendFingerprintScanStatus("IMAGE_CAPTURED");
-  r503BlueOn();
+  r503BlueBreathing();             // R503 breathes while converting the image
   delay(120);
 
   uint8_t status =
@@ -3019,8 +4753,8 @@ bool readFingerprintMatch(
     String("Conf: ") + String(confidence),
     ""
   );
-  setRgb(false, true, false);   // external RGB: green = local match OK
-  r503GreenFlash();
+  setRgb(false, true, false);   // external RGB stays green after local match
+  r503GreenBreathing();            // R503 breathes until recording begins
   beepFingerprintAccepted();
   sendFingerprintScanStatus("VERIFIED");
 
@@ -3039,10 +4773,14 @@ void processFingerprint(
     uint16_t confidence
 ) {
   if (isDuplicateFingerprint(fingerprintId)) {
-    Serial.println(
-      "[R503] Same finger repeated. Ignored."
-    );
+    Serial.println("[R503] Same finger repeated inside 3-second guard.");
+    showRateLimitFeedback(fingerprintId, DUPLICATE_FINGER_DELAY_MS);
+    return;
+  }
 
+  unsigned long remainingCooldownMs = 0;
+  if (isFingerprintRateLimited(fingerprintId, remainingCooldownMs)) {
+    showRateLimitFeedback(fingerprintId, remainingCooldownMs);
     return;
   }
 
@@ -3069,7 +4807,9 @@ void processFingerprint(
     formatTimestamp(currentTime)
   );
 
-  if (WiFi.status() == WL_CONNECTED) {
+  // Only attempt live delivery when the most recent heartbeat says a server
+  // is reachable. Otherwise save immediately and synchronize later.
+  if (WiFi.status() == WL_CONNECTED && serverReachable) {
     showLiveScanStage(
       "RECORDING",
       "MATCH CONFIRMED",
@@ -3089,9 +4829,19 @@ void processFingerprint(
 
     if (delivered) {
       if (response.parsed) {
+        if (!response.fullName.isEmpty() && response.accepted) {
+          cacheEmployeeName(fingerprintId, response.fullName);
+        }
         showApiFeedback(
           response,
-          currentTime
+          currentTime,
+          fingerprintId
+        );
+        publishMqttScanEvent(
+          fingerprintId,
+          confidence,
+          response.code,
+          response.fullName
         );
       } else {
         setRgb(false, true, false);
@@ -3109,6 +4859,12 @@ void processFingerprint(
         Serial.println(
           "[DISPLAY] SCAN SAVED ON SERVER"
         );
+        publishMqttScanEvent(
+          fingerprintId,
+          confidence,
+          "SERVER_RECEIVED",
+          cachedNameOrUnknown(fingerprintId)
+        );
       }
 
       Serial.println(
@@ -3125,14 +4881,23 @@ void processFingerprint(
     "PENDING SYNC",
     ""
   );
-  setRgb(true, true, false);    // external RGB: yellow = offline/pending
-  r503YellowFlash();
+  setRgb(true, true, false);    // external RGB stays yellow while writing offline
+  r503YellowBreathing();           // R503 breathes during offline storage write
 
   const bool offlineSaved =
       saveRecordOffline(scanJson);
 
   if (offlineSaved) {
-    showOfflineFeedback();
+    // Remember that a replay is required. It will run immediately after the
+    // heartbeat confirms that local or cloud service is reachable again.
+    pendingSyncRequested = true;
+    showOfflineFeedback(fingerprintId);
+    publishMqttScanEvent(
+      fingerprintId,
+      confidence,
+      "OFFLINE_SAVED",
+      cachedNameOrUnknown(fingerprintId)
+    );
   } else {
     showErrorFeedback(
       "Attendance was not saved."
@@ -3345,7 +5110,21 @@ void showHelp() {
   Serial.println("COLOR <1-8>     - show one R503 Aura LED color");
   Serial.println("BUZZER          - test buzzer sound");
   Serial.println("STATUS          - show OLED/WiFi/API/storage status");
-  Serial.println("TIME            - show RTC time");
+  Serial.println("SDTEST          - rerun detailed MicroSD diagnostics");
+  Serial.println("TIME            - show RTC time and NTP drift");
+  Serial.println("NTP             - force NTP time sync");
+  Serial.println("MDNS            - show mDNS and discovered server");
+  Serial.println("DISCOVER        - force mDNS server discovery");
+  Serial.println("WEB             - show Web Admin address");
+  Serial.println("OTA             - show OTA status");
+  Serial.println("MQTT            - show MQTT status");
+  Serial.println("CONFIG          - show current config");
+  Serial.println("CONFIG SET <K> <V> - save any supported setting");
+  Serial.println("RESTART         - restart the device");
+  Serial.println("NAMES           - show cached employee name count");
+  Serial.println("NAMES LIST      - list all cached employee names");
+  Serial.println("NAME <id> <name>- cache employee name for offline display");
+  Serial.println("CLEAR NAMES     - clear all cached employee names");
   Serial.println("=========================");
   Serial.println();
 }
@@ -3643,16 +5422,50 @@ void handleSerialCommands() {
     Serial.println(connectionDetailLine());
     Serial.print("[STATUS] Offline storage: ");
     Serial.println(offlineStorageName());
-    Serial.print("[STATUS] MicroSD: ");
+    Serial.print("[STATUS] MicroSD code: ");
+    Serial.println(microSdCode);
+    Serial.print("[STATUS] MicroSD status: ");
     Serial.println(microSdStatus);
+    Serial.print("[STATUS] MicroSD detail: ");
+    Serial.println(microSdDetail);
+    Serial.print("[STATUS] MicroSD read/write: ");
+    Serial.println(microSdReady ? "VERIFIED" : "NOT AVAILABLE");
     Serial.print("[STATUS] LittleFS ready: ");
     Serial.println(littleFsReady ? "YES" : "NO");
 
     showOledStatus(
+      String("SD: ") + microSdCode,
+      microSdStatus,
       String("Storage: ") + offlineStorageName(),
-      String("SD: ") + microSdStatus,
-      String("Flash: ") + (littleFsReady ? "OK" : "FAILED"),
-      ""
+      String("Flash: ") + (littleFsReady ? "OK" : "FAILED")
+    );
+
+    return;
+  }
+
+  if (upperCommand == "SDTEST") {
+    Serial.println();
+    Serial.println("========== MICROSD DIAGNOSTIC ==========");
+    const bool sdOkay = initializeMicroSdStorage();
+
+    if (!sdOkay && littleFsReady) {
+      useMicroSdStorage = false;
+      Serial.println("[SD DIAG] LittleFS fallback remains active.");
+    }
+
+    Serial.print("[SD DIAG] Final code: ");
+    Serial.println(microSdCode);
+    Serial.print("[SD DIAG] Final status: ");
+    Serial.println(microSdStatus);
+    Serial.print("[SD DIAG] Final detail: ");
+    Serial.println(microSdDetail);
+    Serial.println("========================================");
+
+    showOledStatus(
+      String("SD TEST ") + microSdCode,
+      microSdStatus,
+      microSdReady ? "READ/WRITE VERIFIED" : "CHECK SERIAL DETAIL",
+      littleFsReady ? "LittleFS backup OK" : "NO BACKUP STORAGE"
     );
 
     return;
@@ -3661,15 +5474,181 @@ void handleSerialCommands() {
   if (upperCommand == "TIME") {
     Serial.print("[RTC] Current time: ");
     Serial.println(formatTimestamp(rtc.now()));
+    Serial.print("[NTP] Drift: ");
+    Serial.print(ntpDriftSeconds, 1);
+    Serial.println("s");
+    Serial.print("[NTP] Last sync: ");
+    Serial.print((millis() - lastNtpSyncAt) / 1000);
+    Serial.println("s ago");
+    return;
+  }
+
+  if (upperCommand == "NTP") {
+    Serial.println("[NTP] Manual sync requested...");
+    syncRtcWithNtp();
+    return;
+  }
+
+  if (upperCommand == "MDNS") {
+    Serial.print("[MDNS] Status: ");
+    Serial.println(mdnsActive ? "ACTIVE" : "INACTIVE");
+    Serial.print("[MDNS] Device hostname: ");
+    Serial.println(deviceMdnsHostname() + ".local");
+    Serial.print("[MDNS] Server host target: ");
+    Serial.println(normalizeMdnsHostname(mdnsServerHost) + ".local");
+    Serial.print("[MDNS] Discovered URL: ");
+    Serial.println(discoveredServerUrl.isEmpty() ? "none; using configured fallback" : discoveredServerUrl);
+    return;
+  }
+
+  if (upperCommand == "DISCOVER") {
+    discoverAttendanceServer(true);
+    return;
+  }
+
+  if (upperCommand == "WEB") {
+    Serial.print("[WEB] Enabled: ");
+    Serial.println(webAdminEnabled ? "YES" : "NO");
+    Serial.print("[WEB] Address: http://");
+    Serial.print(WiFi.localIP());
+    Serial.println("/");
+    return;
+  }
+
+  if (upperCommand == "OTA") {
+    Serial.print("[OTA] Enabled: ");
+    Serial.println(otaEnabled ? "YES" : "NO");
+    Serial.print("[OTA] Service: ");
+    Serial.println(otaStarted ? "READY" : "STOPPED");
+    Serial.print("[OTA] Host: ");
+    Serial.println(deviceMdnsHostname() + ".local");
+    return;
+  }
+
+  if (upperCommand == "MQTT") {
+    Serial.print("[MQTT] Library: ");
+    Serial.println(GMS_MQTT_LIBRARY_AVAILABLE ? "AVAILABLE" : "MISSING");
+    Serial.print("[MQTT] Enabled: ");
+    Serial.println(mqttEnabled ? "YES" : "NO");
+    Serial.print("[MQTT] Broker: ");
+    Serial.print(mqttHost);
+    Serial.print(":");
+    Serial.println(mqttPort);
+#if GMS_MQTT_LIBRARY_AVAILABLE
+    Serial.print("[MQTT] Connected: ");
+    Serial.println(mqttClient.connected() ? "YES" : "NO");
+#endif
+    return;
+  }
+
+  if (upperCommand == "RESTART") {
+    Serial.println("[SYSTEM] Restarting...");
+    delay(100);
+    ESP.restart();
+    return;
+  }
+
+  if (upperCommand == "CONFIG") {
+    Serial.println("[CONFIG] Current settings:");
+    Serial.print("  Server fallback URL: "); Serial.println(serverUrl);
+    Serial.print("  Discovered local URL: "); Serial.println(discoveredServerUrl.isEmpty() ? "none" : discoveredServerUrl);
+    Serial.print("  Effective local URL: "); Serial.println(effectiveLocalServerUrl());
+    Serial.print("  Cloud URL: "); Serial.println(cloudApiUrl);
+    Serial.print("  Device ID: "); Serial.println(deviceId);
+    Serial.print("  Location: "); Serial.println(deviceLocation);
+    Serial.print("  WiFi SSID: "); Serial.println(wifiSsid);
+    Serial.print("  WiFi IP: "); Serial.println(WiFi.localIP());
+    Serial.print("  mDNS device: "); Serial.println(deviceMdnsHostname() + ".local");
+    Serial.print("  mDNS server target: "); Serial.println(normalizeMdnsHostname(mdnsServerHost) + ".local");
+    Serial.print("  Web Admin: "); Serial.println(webAdminEnabled ? "ENABLED" : "DISABLED");
+    Serial.print("  OTA: "); Serial.println(otaEnabled ? "ENABLED" : "DISABLED");
+    Serial.print("  MQTT: "); Serial.println(mqttEnabled ? "ENABLED" : "DISABLED");
+    Serial.print("  MQTT broker: "); Serial.print(mqttHost); Serial.print(":"); Serial.println(mqttPort);
+    Serial.print("  NTP synced: "); Serial.println(ntpSynced ? "YES" : "NO");
+    return;
+  }
+
+  if (upperCommand.startsWith("CONFIG SET")) {
+    String params = command.substring(String("CONFIG SET").length());
+    params.trim();
+    const int firstSpace = params.indexOf(' ');
+
+    if (firstSpace <= 0) {
+      Serial.println("[CONFIG] Usage: CONFIG SET <KEY> <VALUE>");
+      return;
+    }
+
+    String key = params.substring(0, firstSpace);
+    String value = params.substring(firstSpace + 1);
+    key.trim();
+    value.trim();
+
+    String resultMessage;
+    if (!updateConfigSetting(key, value, resultMessage)) {
+      Serial.print("[CONFIG] ERROR: ");
+      Serial.println(resultMessage);
+      Serial.println("[CONFIG] Keys: SERVER_URL, CLOUD_URL, DEVICE_ID, LOCATION, WIFI_SSID, WIFI_PASS, MDNS_SERVER_HOST, WEB_ENABLED, WEB_USER, WEB_PASSWORD, OTA_ENABLED, OTA_PASSWORD, MQTT_ENABLED, MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASSWORD, MQTT_TOPIC");
+    }
+    return;
+  }
+
+  if (upperCommand == "NAMES") {
+    const size_t count = countCachedEmployees();
+    Serial.print("[CACHE] Cached employee names: ");
+    Serial.println(count);
+    showOledStatus(
+      "EMPLOYEE CACHE",
+      String("Cached: ") + String(count),
+      "Use NAMES LIST",
+      "or CLEAR NAMES"
+    );
+    return;
+  }
+
+  if (upperCommand == "NAMES LIST") {
+    Serial.println("[CACHE] Cached names:");
+    printCachedEmployeeNames();
+    return;
+  }
+
+  if (upperCommand == "CLEAR NAMES") {
+    clearEmployeeCache();
+    showOledStatus(
+      "CACHE CLEARED",
+      "All names removed",
+      "Re-scan to rebuild",
+      ""
+    );
+    return;
+  }
+
+  if (upperCommand.startsWith("NAME ")) {
+    String params = command.substring(5);
+    params.trim();
+    int spaceIdx = params.indexOf(' ');
+    if (spaceIdx > 0) {
+      uint16_t id = params.substring(0, spaceIdx).toInt();
+      String name = params.substring(spaceIdx + 1);
+      if (id > 0 && !name.isEmpty()) {
+        cacheEmployeeName(id, name);
+        showOledStatus(
+          "NAME CACHED",
+          String("ID: ") + String(id),
+          name,
+          "Saved offline"
+        );
+      } else {
+        Serial.println("[CACHE] Usage: NAME <id> <full name>");
+      }
+    } else {
+      Serial.println("[CACHE] Usage: NAME <id> <full name>");
+    }
     return;
   }
 
   Serial.println("[R503] Unknown command. Type HELP.");
 }
 
-// =====================================================
-// HARDWARE INITIALIZATION
-// =====================================================
 
 bool initializeRtc() {
   if (!rtc.begin(&Wire)) {
@@ -3742,8 +5721,6 @@ bool initializeFingerprint() {
   );
 
   printFingerprintCount();
-  // Do not run the blocking full-brightness color showcase during boot.
-  // Keep the requested low-average breathing blue ready indication.
   r503BlueBreathing();
   return true;
 }
@@ -3787,10 +5764,6 @@ void initializeFeedbackHardware() {
     digitalWrite(BUZZER_PIN, LOW);
   }
 }
-
-// =====================================================
-// ARDUINO SETUP AND LOOP
-// =====================================================
 
 void initializeTaskWatchdog() {
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -3899,7 +5872,27 @@ void setup() {
     showSystemError("Fingerprint Sensor", "Not Detected", "FP-01");
   }
 
+  loadDeviceConfig();
+  loadEmployeeCache();
+  setupWebAdminRoutes();
+
+  Serial.println("[CONFIG] Loaded device configuration from Preferences.");
+  Serial.print("[CONFIG] Server fallback URL: ");
+  Serial.println(serverUrl);
+  Serial.print("[CONFIG] Device ID: ");
+  Serial.println(deviceId);
+  Serial.print("[CONFIG] Location: ");
+  Serial.println(deviceLocation);
+  Serial.print("[CONFIG] mDNS server host: ");
+  Serial.println(normalizeMdnsHostname(mdnsServerHost) + ".local");
+
   waitForInitialWiFi();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    maintainRemoteServices();
+    discoverAttendanceServer(true);
+    syncRtcWithNtp();
+  }
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("[WIFI] Checking server health endpoint...");
@@ -3956,9 +5949,24 @@ void setup() {
 void loop() {
   handleSerialCommands();
   maintainWiFiConnection();
+  saveConfigIfDirty();
   maintainFeedbackState();
   maintainOledProtection();
   maintainFingerprintRecovery();
+  if (
+    fingerprintReady &&
+    millis() - lastFingerprintPollAt >= FINGERPRINT_POLL_INTERVAL_MS
+  ) {
+    lastFingerprintPollAt = millis();
+    uint16_t fingerprintId = 0;
+    uint16_t confidence = 0;
+    if (readFingerprintMatch(fingerprintId, confidence)) {
+      processFingerprint(fingerprintId, confidence);
+    }
+  }
+
+  maintainRemoteServices();
+  maintainNtpSync();
 
   if (!feedbackActive && !syncInProgress) {
     const String currentTitle = connectionStatusTitle();
@@ -3972,13 +5980,38 @@ void loop() {
     }
   }
 
+  const unsigned long heartbeatInterval =
+      serverReachable
+        ? HEARTBEAT_INTERVAL_MS
+        : DISCONNECTED_HEARTBEAT_INTERVAL_MS;
+
   if (
     WiFi.status() == WL_CONNECTED &&
-    millis() - lastHeartbeatAttempt >=
-      HEARTBEAT_INTERVAL_MS
+    !feedbackActive &&
+    !syncInProgress &&
+    millis() - lastHeartbeatAttempt >= heartbeatInterval
   ) {
-    lastHeartbeatAttempt = millis();
     sendReaderHeartbeat();
+    lastHeartbeatAttempt = millis();
+  }
+
+  // Replay pending attendance before display-command polling. Previously the
+  // display poll ran first and could repeatedly activate feedback, postponing
+  // the offline queue replay.
+  if (
+    WiFi.status() == WL_CONNECTED &&
+    serverReachable &&
+    !feedbackActive &&
+    !syncInProgress &&
+    (
+      pendingSyncRequested ||
+      millis() - lastSyncAttempt >= SYNC_INTERVAL_MS
+    )
+  ) {
+    pendingSyncRequested = false;
+    lastSyncAttempt = millis();
+    synchronizePendingRecords();
+    synchronizePendingEnrollmentRequests();
   }
 
   if (
@@ -3993,24 +6026,6 @@ void loop() {
     pollDisplayCommand();
   }
 
-  if (
-    WiFi.status() == WL_CONNECTED &&
-    serverReachable &&
-    millis() - lastSyncAttempt >=
-      SYNC_INTERVAL_MS
-  ) {
-    lastSyncAttempt = millis();
-    synchronizePendingRecords();
-    synchronizePendingEnrollmentRequests();
-  }
-
-  if (fingerprintReady && millis() - lastFingerprintPollAt >= FINGERPRINT_POLL_INTERVAL_MS) {
-    lastFingerprintPollAt = millis();
-    uint16_t fingerprintId = 0;
-    uint16_t confidence = 0;
-    if (readFingerprintMatch(fingerprintId, confidence)) processFingerprint(fingerprintId, confidence);
-  }
-
   if (millis() - lastHeapLogAt >= HEAP_LOG_INTERVAL_MS) {
     lastHeapLogAt = millis();
     Serial.printf("[MEMORY] Free heap: %u bytes; minimum: %u bytes.\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
@@ -4019,10 +6034,3 @@ void loop() {
   esp_task_wdt_reset();
   yield();
 }
-
-/*
-  Existing attendance, enrollment, queue replay, and server display-command
-  functions above remain the source of truth. The loop intentionally has no
-  fixed delay: each maintenance job runs from its own millis() schedule.
-*/
-
